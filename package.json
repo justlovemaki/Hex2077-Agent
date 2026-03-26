@@ -1,0 +1,31 @@
+{
+  "name": "@prismflow/hex2077",
+  "version": "1.0.0",
+  "description": "Hex 2077 AI Persona Plugin",
+  "type": "module",
+  "main": "dist/Hex2077Tool.js",
+  "types": "dist/Hex2077Tool.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "example": "tsc && node dist/example.js",
+    "start": "tsc && node dist/server.js"
+  },
+  "keywords": ["ai", "persona", "hex2077", "agent"],
+  "author": "hex2077",
+  "license": "MIT",
+  "dependencies": {
+    "fastify": "^5.0.0",
+    "@fastify/static": "^8.0.0",
+    "@fastify/cors": "^10.0.0",
+    "@fastify/multipart": "^9.0.0",
+    "openai": "^4.28.0",
+    "dotenv": "^16.4.5",
+    "pdf-parse": "^1.1.1",
+    "mammoth": "^1.7.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3",
+    "@types/node": "^20.11.24"
+  }
+}

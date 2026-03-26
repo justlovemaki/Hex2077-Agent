@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>何夕2077 - AI 分身对话</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js"></script>
+    <link rel="stylesheet" href="./theme.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" rel="stylesheet">
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const renderer = new marked.Renderer();
+        const linkRenderer = renderer.link;
+        renderer.link = (href, title, text) => {
+            const html = linkRenderer.call(renderer, href, title, text);
+            return html.replace(/^<a /, '<a target="_blank" rel="nofollow noopener noreferrer" ');
+        };
+        marked.setOptions({ renderer, gfm: true, breaks: true });
+
+        const Markdown = ({ content }) => {
+            const rawHtml = marked.parse(content || '');
+            const cleanHtml = DOMPurify.sanitize(rawHtml, { ADD_ATTR: ['target'] });
+            return <div className="markdown-body" dangerouslySetInnerHTML={{ __html: cleanHtml }} />;
+        };
+
+        const App = () => {
+            const CONFIG_PRESETS = [
+                {
+                    greeting: '你好，我是何夕2077。我更喜欢聊点透彻的：不管是我的项目背景、AI 日报背后的逻辑，还是具体的合作可能。如果你有正在纠结的技术卡点，或者只想找个懂行的人聊聊，我都在。你想从哪个话题开始？',
+                    placeholder: '聊聊技术卡点、合作可能或我的背景...'
+                }
+            ];
+
+
+
+            const [messages, setMessages] = useState([]);
+            const [placeholder, setPlaceholder] = useState('输入...');
+            const [fingerprint, setFingerprint] = useState('');
+            const [input, setInput] = useState('');
+            const [loading, setLoading] = useState(false);
+            const [agentStatus, setAgentStatus] = useState(null);
+            const [isStreaming, setIsStreaming] = useState(false);
+            const [isDarkMode, setIsDarkMode] = useState(true);
+            
+            const scrollRef = useRef(null);
+            const displayPlaceholder = messages.length > 1 ? '继续聊聊...' : placeholder;
+
+            useEffect(() => {
+                // 初始化主题 (优先从 URL 参数读取)
+                const params = new URLSearchParams(window.location.search);
+                const urlTheme = params.get('theme');
+                const savedTheme = urlTheme || localStorage.getItem('hex_theme') || 'dark';
+                
+                setIsDarkMode(savedTheme === 'dark');
+                if (urlTheme) localStorage.setItem('hex_theme', urlTheme);
+
+                let fp = localStorage.getItem('hex_fingerprint');
+                if (!fp) {
+                    fp = 'fp_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
+                    localStorage.setItem('hex_fingerprint', fp);
+                }
+                setFingerprint(fp);
+
+                const savedHistory = localStorage.getItem(`hex_history_${fp}`);
+                if (savedHistory) {
+                    setMessages(JSON.parse(savedHistory));
+                    setPlaceholder(CONFIG_PRESETS[Math.floor(Math.random() * CONFIG_PRESETS.length)].placeholder);
+                } else {
+                    const preset = CONFIG_PRESETS[Math.floor(Math.random() * CONFIG_PRESETS.length)];
+                    setMessages([{ role: 'assistant', content: preset.greeting }]);
+                    setPlaceholder(preset.placeholder);
+                }
+            }, []);
+
+            useEffect(() => {
+                if (fingerprint && messages.length > 0) {
+                    localStorage.setItem(`hex_history_${fingerprint}`, JSON.stringify(messages));
+                }
+            }, [messages, fingerprint]);
+
+            useEffect(() => {
+                scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }, [messages, loading]);
+
+            const toggleTheme = () => {
+                const newMode = !isDarkMode;
+                setIsDarkMode(newMode);
+                localStorage.setItem('hex_theme', newMode ? 'dark' : 'light');
+            };
+
+            const handleClear = () => {
+                if (window.confirm('确定要清空对话记录吗？')) {
+                    const preset = CONFIG_PRESETS[Math.floor(Math.random() * CONFIG_PRESETS.length)];
+                    setMessages([{ role: 'assistant', content: preset.greeting }]);
+                    setPlaceholder(preset.placeholder);
+                }
+            };
+
+            const handleSend = async () => {
+                if (!input.trim() || loading) return;
+                const userMsg = { role: 'user', content: input };
+                setMessages(prev => [...prev, userMsg]);
+                setInput('');
+                setLoading(true);
+                setIsStreaming(false);
+                setAgentStatus({ agent: 'System', message: '连接中...' });
+
+                try {
+                    const response = await fetch('/api/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'X-Fingerprint': fingerprint },
+                        body: JSON.stringify({ input, history: messages.slice(-10).map(m => ({ role: m.role, content: m.content })) })
+                    });
+
+                    if (!response.body) throw new Error('No body');
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder();
+                    let assistantContent = '';
+                    let hasAddedAssistant = false;
+                    let buffer = '';
+
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+
+                        buffer += decoder.decode(value, { stream: true });
+                        const lines = buffer.split('\n\n');
+                        buffer = lines.pop();
+                        
+                        for (const line of lines) {
+                            if (!line.trim() || !line.startsWith('data: ')) continue;
+                            try {
+                                const payload = JSON.parse(line.slice(6));
+                                if (payload.type === 'status') {
+                                    setAgentStatus(payload.data);
+                                } else if (payload.type === 'content') {
+                                    assistantContent += payload.data;
+                                    setIsStreaming(true);
+                                    if (!hasAddedAssistant) {
+                                        setMessages(prev => [...prev, { role: 'assistant', content: assistantContent }]);
+                                        hasAddedAssistant = true;
+                                    } else {
+                                        setMessages(prev => {
+                                            const last = prev[prev.length - 1];
+                                            return [...prev.slice(0, -1), { ...last, content: assistantContent }];
+                                        });
+                                    }
+                                } else if (payload.type === 'done') {
+                                    setAgentStatus(null);
+                                }
+                            } catch (e) {
+                                console.error('Parse error:', e, line);
+                            }
+                        }
+                    }
+                } catch (err) {
+                    setMessages(prev => [...prev, { role: 'assistant', content: '链路故障。' }]);
+                } finally {
+                    setLoading(false);
+                    setIsStreaming(false);
+                    setAgentStatus(null);
+                }
+            };
+
+            return (
+                <div className={`${isDarkMode ? 'theme-dark' : 'theme-light'} flex flex-col h-screen w-full min-w-[300px] min-h-[600px] bg-[var(--bg-color)] overflow-hidden relative`}>
+                    <header className="flex justify-between items-center px-3 py-2 md:px-4 md:py-3 border-b border-[var(--border-color)] shrink-0 bg-[var(--header-bg)] backdrop-blur-md z-20">
+                        <div className="flex items-center gap-2 md:gap-3">
+                            <a href="https://github.com/justlovemaki" target="_blank" rel="noopener noreferrer">
+                                <img src="./logo.jpg" className="w-8 h-8 md:w-10 md:h-10 rounded-full object-cover hover:opacity-80 transition-opacity" alt="Logo" />
+                            </a>
+                            <h1 className="text-sm md:text-lg font-bold tracking-tight truncate">
+                                <span>何夕</span>
+                                <span className="text-[var(--primary-color)]">2077</span>
+                            </h1>
+                        </div>
+                        <div className="flex items-center gap-2 md:gap-3">
+                            <button onClick={toggleTheme} title="切换主题" className="text-gray-500 hover:text-[var(--primary-color)] transition-colors">
+                                {isDarkMode ? (
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707M17.657 17.657l-.707-.707M6.343 6.343l-.707-.707M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                                ) : (
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>
+                                )}
+                            </button>
+                            <button onClick={handleClear} title="清空对话" className="text-gray-500 hover:text-red-500 transition-colors">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                            </button>
+                            <div className="flex items-center gap-2 text-[9px] md:text-xs mono shrink-0 text-[var(--text-dim)]">
+                                <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
+                                ONLINE
+                            </div>
+                        </div>
+                    </header>
+
+                    <div className="flex-1 overflow-y-auto px-3 py-4 md:px-6 md:py-6 space-y-4 md:space-y-6 scroll-smooth">
+                        {messages.map((msg, idx) => (
+                            <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate__animated animate__fadeInUp`}>
+                                <div className={`message-bubble p-3 md:p-4 ${msg.role === 'user' ? 'user-message' : 'ai-message shadow-lg'}`}>
+                                    <div className="text-xs md:text-sm leading-relaxed">
+                                        <Markdown content={msg.content} />
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                        {loading && !isStreaming && (
+                            <div className="flex justify-start animate__animated animate__fadeIn px-4 py-2">
+                                <div className="flex flex-col gap-1.5">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-1.5 h-1.5 bg-[var(--primary-color)] rounded-full animate-pulse shadow-[0_0_8px_var(--primary-glow)]"></div>
+                                        <span className="text-[10px] md:text-xs mono font-bold text-[var(--primary-color)] uppercase tracking-wider">
+                                            {agentStatus?.agent || 'Executing Agent'}
+                                        </span>
+                                    </div>
+                                    <div className="text-[10px] md:text-xs text-[var(--text-dim)] italic ml-3.5">
+                                        {agentStatus?.message || 'Processing...'}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                        <div ref={scrollRef}></div>
+                    </div>
+
+                    <div className="bg-[var(--header-bg)] p-2 md:p-4 border-t border-[var(--border-color)] shrink-0">
+                        <div className="flex gap-2 md:gap-3 items-center max-w-5xl mx-auto w-full">
+                            <textarea
+                                value={input}
+                                onChange={(e) => setInput(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                                placeholder={displayPlaceholder}
+                                maxLength={500}
+                                className="flex-1 bg-[var(--bg-color)] text-[var(--text-main)] border border-[var(--border-color)] rounded-lg md:rounded-xl p-2 md:p-3 text-xs md:text-sm focus:outline-none focus:border-[var(--primary-color)] transition-colors resize-none h-9 md:h-12"
+                            />
+                            <button onClick={handleSend} disabled={loading} className="w-9 h-9 md:w-12 md:h-12 primary-btn rounded-lg md:rounded-xl flex items-center justify-center transition-all cyber-border shrink-0">
+                                <svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

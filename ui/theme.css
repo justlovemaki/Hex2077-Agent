@@ -1,0 +1,145 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=JetBrains+Mono:wght@400;700&display=swap');
+
+/* 基础定义 */
+:root {
+    --transition-speed: 0.3s;
+}
+
+/* 暗色主题 (Pornhub 风格) */
+.theme-dark {
+    --bg-color: #000000;
+    --container-bg: #1b1b1b;
+    --primary-color: #ff9900; /* 经典橙色 */
+    --primary-glow: rgba(255, 153, 0, 0.3);
+    --ai-msg-bg: #2b2b2b;
+    --user-msg-bg: #ff9900; 
+    --user-text: #000000;
+    --text-main: #ffffff;
+    --text-dim: #999;
+    --border-color: rgba(255, 255, 255, 0.1);
+    --header-bg: rgba(0, 0, 0, 0.8);
+}
+
+/* 浅色主题 */
+.theme-light {
+    --bg-color: #f4f4f5;
+    --container-bg: #ffffff;
+    --primary-color: #2563eb; /* 蓝色 */
+    --primary-glow: rgba(37, 99, 235, 0.1);
+    --ai-msg-bg: #e4e4e7;
+    --user-msg-bg: #2563eb;
+    --user-text: #ffffff;
+    --text-main: #18181b;
+    --text-dim: #71717a;
+    --border-color: rgba(0, 0, 0, 0.05);
+    --header-bg: rgba(255, 255, 255, 0.8);
+}
+
+body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-main);
+    margin: 0;
+    transition: background-color var(--transition-speed), color var(--transition-speed);
+}
+
+h1, h2, h3, h4, h5, h6 {
+    color: var(--text-main);
+}
+
+.text-dim {
+    color: var(--text-dim) !important;
+}
+
+textarea, input {
+    color: var(--text-main);
+    background-color: transparent;
+}
+
+textarea::placeholder, input::placeholder {
+    color: var(--text-dim);
+    opacity: 0.5;
+}
+
+.mono {
+    font-family: 'JetBrains Mono', monospace;
+}
+
+/* 通用组件 */
+.glass {
+    background: var(--container-bg);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid var(--border-color);
+}
+
+.cyber-border {
+    border: 1px solid var(--primary-color);
+    box-shadow: 0 0 10px var(--primary-glow);
+}
+
+/* 消息气泡 */
+.message-bubble {
+    max-width: 85%;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+    transition: transform 0.2s;
+}
+
+.user-message {
+    background: var(--user-msg-bg);
+    color: var(--user-text);
+    border-radius: 12px 12px 2px 12px;
+}
+
+.ai-message {
+    background: var(--ai-msg-bg);
+    color: var(--text-main);
+    border: 1px solid var(--border-color);
+    border-radius: 12px 12px 12px 2px;
+}
+
+.theme-dark .ai-message {
+    border: 1px solid rgba(255, 153, 0, 0.1);
+}
+
+/* Markdown 渲染适配 */
+.markdown-body a {
+    color: var(--primary-color);
+    text-decoration: underline;
+    font-weight: bold;
+}
+
+.markdown-body p { margin-bottom: 0.75rem; }
+.markdown-body p:last-child { margin-bottom: 0; }
+
+.markdown-body code {
+    background: rgba(128, 128, 128, 0.2);
+    padding: 0.1rem 0.3rem;
+    border-radius: 4px;
+    font-family: 'JetBrains Mono', monospace;
+}
+
+/* 特色按钮 */
+.primary-btn {
+    background: var(--primary-color);
+    color: #000;
+    font-weight: bold;
+    border-radius: 4px;
+    transition: filter 0.2s;
+}
+
+.theme-light .primary-btn {
+    color: #fff;
+}
+
+.primary-btn:hover {
+    filter: brightness(1.1);
+}
+
+/* 滚动条定制 */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-thumb { background: #555; border-radius: 3px; }
+::-webkit-scrollbar-track { background: transparent; }
+
+.scroll-thin::-webkit-scrollbar { width: 3px; }
+.scroll-thin::-webkit-scrollbar-thumb { background: #777; }

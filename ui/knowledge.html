@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>知识库管理 - 何夕2077</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js"></script>
+    <link rel="stylesheet" href="./theme.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" rel="stylesheet">
+</head>
+<body className="min-h-screen transition-colors">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const KnowledgeManager = () => {
+            const [isLoggedIn, setIsLoggedIn] = useState(false);
+            const [password, setPassword] = useState('');
+            const [items, setItems] = useState([]);
+            const [newItem, setNewItem] = useState({ title: '', content: '' });
+            const [loading, setLoading] = useState(false);
+            const [previewContent, setPreviewContent] = useState(null);
+            const [isDarkMode, setIsDarkMode] = useState(true);
+            const fileInputRef = useRef(null);
+
+            useEffect(() => {
+                const params = new URLSearchParams(window.location.search);
+                const urlTheme = params.get('theme');
+                const savedTheme = urlTheme || localStorage.getItem('hex_theme') || 'dark';
+                
+                setIsDarkMode(savedTheme === 'dark');
+                if (urlTheme) localStorage.setItem('hex_theme', urlTheme);
+
+                const savedPass = sessionStorage.getItem('kb_token');
+                if (savedPass) {
+                    setIsLoggedIn(true);
+                    fetchItems(savedPass);
+                }
+            }, []);
+
+            const toggleTheme = () => {
+                const newMode = !isDarkMode;
+                setIsDarkMode(newMode);
+                localStorage.setItem('hex_theme', newMode ? 'dark' : 'light');
+            };
+
+            const handleLogin = async () => {
+                try {
+                    const res = await fetch('/api/knowledge/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ password })
+                    });
+                    if (res.ok) {
+                        sessionStorage.setItem('kb_token', password);
+                        setIsLoggedIn(true);
+                        fetchItems(password);
+                    } else { alert('密码错误'); }
+                } catch (e) { alert('登录失败'); }
+            };
+
+            const fetchItems = async (token) => {
+                const res = await fetch('/api/knowledge', {
+                    headers: { 'Authorization': token || sessionStorage.getItem('kb_token') }
+                });
+                if (res.status === 401) { setIsLoggedIn(false); return; }
+                const data = await res.json();
+                setItems(data);
+            };
+
+            const handleFileUpload = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                setLoading(true);
+                const formData = new FormData();
+                formData.append('file', file);
+                try {
+                    const res = await fetch('/api/knowledge/upload', {
+                        method: 'POST',
+                        headers: { 'Authorization': sessionStorage.getItem('kb_token') },
+                        body: formData
+                    });
+                    if (res.ok) fetchItems();
+                    else { const err = await res.json(); alert(`上传失败: ${err.error}`); }
+                } catch (e) { alert('上传异常'); }
+                finally { setLoading(false); if (fileInputRef.current) fileInputRef.current.value = ''; }
+            };
+
+            const handleDelete = async (id) => {
+                if (!confirm('确定删除吗？')) return;
+                await fetch(`/api/knowledge/${id}`, { method: 'DELETE', headers: { 'Authorization': sessionStorage.getItem('kb_token') } });
+                fetchItems();
+            };
+
+            const handlePreview = async (docId, partId) => {
+                try {
+                    const res = await fetch(`/api/knowledge/part/${docId}/${partId}`, {
+                        headers: { 'Authorization': sessionStorage.getItem('kb_token') }
+                    });
+                    const data = await res.json();
+                    setPreviewContent(data.content);
+                } catch (e) { alert('读取失败'); }
+            };
+
+            const handleAdd = async () => {
+                if (!newItem.title || !newItem.content) {
+                    alert('请输入标题和内容');
+                    return;
+                }
+                setLoading(true);
+                try {
+                    const res = await fetch('/api/knowledge', {
+                        method: 'POST',
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'Authorization': sessionStorage.getItem('kb_token') 
+                        },
+                        body: JSON.stringify(newItem)
+                    });
+                    if (res.ok) {
+                        setNewItem({ title: '', content: '' });
+                        fetchItems();
+                    } else {
+                        const err = await res.json();
+                        alert(`添加失败: ${err.error}`);
+                    }
+                } catch (e) {
+                    alert('添加异常');
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            if (!isLoggedIn) {
+                return (
+                    <div className={`${isDarkMode ? 'theme-dark' : 'theme-light'} h-screen flex items-center justify-center bg-[var(--bg-color)]`}>
+                        <div className="glass p-8 rounded-2xl w-full max-w-md space-y-6">
+                            <div className="text-center">
+                                <h1 className="text-xl font-bold">知识库访问受限</h1>
+                                <p className="text-sm text-dim mt-2">请输入管理密码以继续</p>
+                            </div>
+                            <input type="password" placeholder="输入密码..." className="w-full bg-[var(--bg-color)] text-[var(--text-main)] border border-[var(--border-color)] rounded-xl p-3 outline-none focus:border-[var(--primary-color)]" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleLogin()} />
+                            <button onClick={handleLogin} className="w-full primary-btn py-3 rounded-xl transition-colors">进入管理</button>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className={`${isDarkMode ? 'theme-dark' : 'theme-light'} min-h-screen bg-[var(--bg-color)] text-[var(--text-main)] p-4 md:p-10 transition-colors`}>
+                    <div className="max-w-4xl mx-auto space-y-8">
+                        <header className="flex justify-between items-center border-b border-[var(--border-color)] pb-6">
+                            <div className="flex items-center gap-3">
+                                <a href="https://github.com/justlovemaki" target="_blank" rel="noopener noreferrer">
+                                    <img src="./logo.jpg" className="w-10 h-10 rounded-full object-cover hover:opacity-80" alt="Logo" />
+                                </a>
+                            <div>
+                                <h1 className="text-2xl font-bold tracking-tight">
+                                    <span>知识库</span>
+                                    <span className="text-[var(--primary-color)]">管理</span>
+                                </h1>
+                                <p className="text-sm text-[var(--text-dim)]">为“何夕2077”分身注入硬核干货资料</p>
+                            </div>
+
+                            </div>
+                            <div className="flex gap-4 items-center">
+                                <button onClick={toggleTheme} className="text-gray-500 hover:text-[var(--primary-color)]">
+                                    {isDarkMode ? '切换浅色' : '切换暗色'}
+                                </button>
+                                <a href="/" className="text-xs text-[var(--primary-color)] hover:underline">返回聊天 &rarr;</a>
+                            </div>
+                        </header>
+
+                        <div className="grid gap-8 md:grid-cols-2">
+                            <div className="glass p-6 rounded-2xl space-y-4 shadow-sm">
+                                <h2 className="text-lg font-bold">手动录入</h2>
+                                <div className="grid gap-4">
+                                    <input type="text" placeholder="资料标题" className="w-full bg-[var(--bg-color)] text-[var(--text-main)] border border-[var(--border-color)] rounded-xl p-3 outline-none focus:border-[var(--primary-color)] text-xs" value={newItem.title} onChange={e => setNewItem({...newItem, title: e.target.value})} />
+                                    <textarea placeholder="核心干货内容..." className="w-full bg-[var(--bg-color)] text-[var(--text-main)] border border-[var(--border-color)] rounded-xl p-3 outline-none focus:border-[var(--primary-color)] text-xs h-32 resize-none" value={newItem.content} onChange={e => setNewItem({...newItem, content: e.target.value})} />
+                                    <button onClick={handleAdd} disabled={loading} className={`primary-btn py-2 rounded-xl text-xs transition-all ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                                        {loading ? '正在注入...' : '注入知识库'}
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="glass p-6 rounded-2xl space-y-4 flex flex-col justify-center items-center border-dashed border-2 border-[var(--border-color)] hover:border-[var(--primary-color)] transition-colors">
+                                <h2 className="text-lg font-bold">文件上传</h2>
+                                <p className="text-[10px] text-dim text-center">支持 PDF, DOCX, TXT, MD</p>
+                                <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".pdf,.docx,.doc,.txt,.md" />
+                                <button onClick={() => fileInputRef.current?.click()} className="px-8 py-3 glass hover:bg-white/10 rounded-xl text-sm font-bold border border-[var(--border-color)]">选择文件</button>
+                            </div>
+                        </div>
+
+                        <div className="space-y-4 pb-20">
+                            <h2 className="text-lg font-bold">已注入资料 ({items.length})</h2>
+                            <div className="grid gap-4 md:grid-cols-2">
+                                {items.map(doc => (
+                                    <div key={doc.id} className="glass p-4 rounded-xl relative group border border-[var(--border-color)] hover:border-[var(--primary-color)] transition-all">
+                                        <button onClick={() => handleDelete(doc.id)} className="absolute top-2 right-2 text-dim hover:text-red-500 opacity-0 group-hover:opacity-100">✕</button>
+                                        <h3 className="font-bold text-[var(--primary-color)] mb-2 truncate pr-6 text-sm">{doc.title}</h3>
+                                        <div className="space-y-1 mt-3 max-h-32 overflow-y-auto pr-1 scroll-thin">
+                                            {doc.parts.map(part => (
+                                                <button key={part.id} onClick={() => handlePreview(doc.id, part.id)} className="w-full text-left px-2 py-1.5 rounded bg-black/20 hover:bg-black/40 text-[10px] flex justify-between items-center group/part">
+                                                    <span className="truncate flex-1 text-dim group-hover/part:text-white">#{part.topic}</span>
+                                                    <span className="text-[9px] text-dim ml-2 shrink-0">预览 &rarr;</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+
+                    {previewContent && (
+                        <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4 md:p-10 animate__animated animate__fadeIn">
+                            <div className="glass w-full max-w-4xl h-full flex flex-col rounded-3xl overflow-hidden border border-[var(--border-color)]">
+                                <header className="p-4 border-b border-[var(--border-color)] flex justify-between items-center bg-black/20">
+                                    <h3 className="font-bold">内容预览</h3>
+                                    <button onClick={() => setPreviewContent(null)} className="p-2 hover:bg-white/10 rounded-full">✕</button>
+                                </header>
+                                <div className="flex-1 overflow-y-auto p-6 md:p-10 bg-[var(--bg-color)]">
+                                    <div className="markdown-body" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked.parse(previewContent)) }} />
+                                </div>
+                                <footer className="p-4 border-t border-[var(--border-color)] text-center bg-black/20">
+                                    <button onClick={() => setPreviewContent(null)} className="px-6 py-2 primary-btn rounded-lg text-sm">关闭预览</button>
+                                </footer>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<KnowledgeManager />);
+    </script>
+</body>
+</html>
