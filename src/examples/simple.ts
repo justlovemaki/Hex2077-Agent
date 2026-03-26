@@ -1,5 +1,5 @@
-import { Hex2077Tool } from './Hex2077Tool.js';
-import { ServiceContext, LogService, AIProvider, KnowledgeBaseService, AIResponse, AIMessage } from './base.js';
+import { Hex2077Tool } from '../tools/Hex2077Tool.js';
+import { ServiceContext, LogService, AIProvider, KnowledgeBaseService, AIResponse, AIMessage } from '../core/base.js';
 
 // 1. 实现一个简单的 Mock AI 提供者
 class MockAIProvider implements AIProvider {

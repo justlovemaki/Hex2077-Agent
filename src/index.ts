@@ -1,5 +1,5 @@
-export * from './base.js';
-export * from './Hex2077Tool.js';
+export * from './core/base.js';
+export * from './tools/Hex2077Tool.js';
 export * from './prompts/persona.js';
 export * from './prompts/style.js';
 export * from './prompts/knowledge.js';

@@ -10,6 +10,8 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <link rel="stylesheet" href="./theme.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" rel="stylesheet">
 </head>
@@ -37,10 +39,10 @@
                 setIsDarkMode(savedTheme === 'dark');
                 if (urlTheme) localStorage.setItem('hex_theme', urlTheme);
 
-                const savedPass = sessionStorage.getItem('kb_token');
-                if (savedPass) {
+                const savedToken = sessionStorage.getItem('kb_token');
+                if (savedToken) {
                     setIsLoggedIn(true);
-                    fetchItems(savedPass);
+                    fetchItems(savedToken);
                 }
             }, []);
 
@@ -57,19 +59,26 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ password })
                     });
-                    if (res.ok) {
-                        sessionStorage.setItem('kb_token', password);
+                    const data = await res.json();
+                    if (res.ok && data.token) {
+                        const token = `Bearer ${data.token}`;
+                        sessionStorage.setItem('kb_token', token);
                         setIsLoggedIn(true);
-                        fetchItems(password);
-                    } else { alert('密码错误'); }
+                        fetchItems(token);
+                    } else { alert(data.error || '密码错误'); }
                 } catch (e) { alert('登录失败'); }
             };
 
             const fetchItems = async (token) => {
+                const currentToken = token || sessionStorage.getItem('kb_token');
                 const res = await fetch('/api/knowledge', {
-                    headers: { 'Authorization': token || sessionStorage.getItem('kb_token') }
+                    headers: { 'Authorization': currentToken }
                 });
-                if (res.status === 401) { setIsLoggedIn(false); return; }
+                if (res.status === 401) { 
+                    sessionStorage.removeItem('kb_token');
+                    setIsLoggedIn(false); 
+                    return; 
+                }
                 const data = await res.json();
                 setItems(data);
             };
@@ -219,7 +228,7 @@
 
                     {previewContent && (
                         <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4 md:p-10 animate__animated animate__fadeIn">
-                            <div className="glass w-full max-w-4xl h-full flex flex-col rounded-3xl overflow-hidden border border-[var(--border-color)]">
+                            <div className="glass w-full max-w-2xl max-h-[80vh] flex flex-col rounded-3xl overflow-hidden border border-[var(--border-color)]">
                                 <header className="p-4 border-b border-[var(--border-color)] flex justify-between items-center bg-black/20">
                                     <h3 className="font-bold">内容预览</h3>
                                     <button onClick={() => setPreviewContent(null)} className="p-2 hover:bg-white/10 rounded-full">✕</button>

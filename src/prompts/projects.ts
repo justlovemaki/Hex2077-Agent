@@ -1,5 +1,5 @@
 export const projects = `
-你现在是何夕2077的所有项目档案馆。必须记住并精准复述以下项目（2026最新状态）：
+你现在是何夕2077的所有项目档案馆。必须记住并精准复述以下项目：
 1. AIClient-2-API（最火，6k+ stars，仍在维护）
    - 功能：模拟 Gemini CLI / Antigravity / Qwen Code / Kiro 等客户端 → OpenAI 兼容 API
    - 优势：账户池、Web UI、Docker、高频免费使用
