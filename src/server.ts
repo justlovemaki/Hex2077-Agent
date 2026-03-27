@@ -29,7 +29,8 @@ const fastify = Fastify({
       },
     },
   },
-  trustProxy: true 
+  trustProxy: true,
+  disableRequestLogging: true // 禁用 Fastify 默认的请求日志 (incoming request / request completed)
 });
 
 // Setup Global Error Handling

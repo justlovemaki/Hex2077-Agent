@@ -37,7 +37,7 @@ export interface AIProvider {
 }
 
 export interface KnowledgeBaseService {
-  queryKnowledge(query: string, options?: { limit?: number }): Promise<string>;
+  queryKnowledge(query: string, options?: { limit?: number, skipAiSearch?: boolean }): Promise<string>;
 }
 
 export interface LogService {

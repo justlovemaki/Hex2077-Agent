@@ -177,16 +177,19 @@ ${content}`;
     return res;
   }
 
-  async queryKnowledge(query: string, options?: { limit?: number }): Promise<string> {
+  async queryKnowledge(query: string, options?: { limit?: number, skipAiSearch?: boolean }): Promise<string> {
     const index = await this.getIndex();
     if (index.length === 0) return "";
 
     this.log(`Querying knowledge base: "${query.slice(0, 50)}..."`);
 
     try {
-      // 1. 生成关键词
-      const keywordsRes = await this.generateKeywords(query);
-      const allSearchKeywords = [...new Set([query, ...keywordsRes.match, ...keywordsRes.association])];
+      // 1. 生成搜索关键词
+      let allSearchKeywords = [query];
+      if (!options?.skipAiSearch) {
+        const keywordsRes = await this.generateKeywords(query);
+        allSearchKeywords = [...new Set([query, ...keywordsRes.match, ...keywordsRes.association])];
+      }
 
       const allTopicIndex: any[] = [];
       index.forEach(doc => {

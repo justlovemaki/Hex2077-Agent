@@ -37,6 +37,28 @@ export const strategy = `
 ### 判定准则：
 1. **多重意图判定**：包含“合作意图”的优先判定为 F 类；询问“个人背景/项目”且无明确合作意图的判定为 A 类。
 2. **上下文敏感**：考虑对话历史，识别指代关系（如“那个项目”）。
-3. **格式唯一性**：只输出 "[Strategy: 类型X]"，严禁输出任何多余字符。
-4. **意图模糊**：极度模糊且无实义的请求默认为 E 类。
+3. **输出格式**：必须严格遵循以下格式输出：
+    "[Strategy: 类型X] [Call: Agent1, Agent2...] [Keywords: 词1, 词2...]"
+    
+### 子 Agent 列表：
+- **KnowledgeExpert**: 检索用户上传的私有知识库 (如涉及具体技术细节、过往经历)。
+- **ProjectArchivist**: 检索何夕的个人项目档案与履历。
+- **AIInsightAgent**: 提供 AI 行业深度见解、技术逻辑与最新动态。
+- **BusinessConsultant**: 处理商务合作、资源对接与导引。
+- **PersonaChat**: 快速处理日常闲聊与情感反馈。
+
+### 关于 Keywords (关键)：
+- 仅当 [Call: ...] 中包含 KnowledgeExpert 时，必须在 [Keywords: ...] 中提供 2-3 个核心搜索词。
+- 否则 [Keywords: None]。
+
+
+### 调度建议：
+- A类: KnowledgeExpert, ProjectArchivist
+- B类: AIInsightAgent, KnowledgeExpert
+- C类: AIInsightAgent
+- D类: KnowledgeExpert, AIInsightAgent
+- E类: PersonaChat
+- F类: BusinessConsultant, ProjectArchivist
+- 根据实际问题灵活组合，不限于上述建议。
+
 `;

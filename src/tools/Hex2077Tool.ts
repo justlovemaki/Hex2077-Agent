@@ -6,12 +6,13 @@ import { projects } from '../prompts/projects.js';
 import { strategy } from '../prompts/strategy.js';
 import { cooperation } from '../prompts/cooperation.js';
 import { antiHallucination } from '../prompts/antiHallucination.js';
+import { orchestrator } from '../prompts/orchestrator.js'; // 引入调度器 prompt
 import { AIHelper } from '../utils/AIHelper.js';
 
 export class Hex2077Tool extends BaseTool {
   readonly id = 'hex2077_persona';
   readonly name = '何夕2077 分身 (优化版)';
-  readonly description = '调用 何夕2077 的 AI 分身，采用优化的高效编排架构。';
+  readonly description = '调用 何夕2077 的 AI 分身，采用动态 Agent 调度架构。';
   readonly parameters = {
     type: 'object',
     properties: {
@@ -42,9 +43,11 @@ export class Hex2077Tool extends BaseTool {
     return { strategy: strategyTag, content, steps: results };
   }
 
-  async *streamHandler(args: { input: string; history?: AIMessage[] }): AsyncGenerator<{ type: 'status' | 'content' | 'strategy' | 'done', data: any }> {
-    let { input, history = [] } = args;
+  async *streamHandler(args: { input: string; history?: AIMessage[]; fingerprint?: string; sessionId?: string }): AsyncGenerator<{ type: 'status' | 'content' | 'strategy' | 'done', data: any }> {
+    let { input, history = [], fingerprint = 'unknown', sessionId = 'unknown' } = args;
     input = AIHelper.cleanInput(input);
+    const logPrefix = `[${fingerprint}][${sessionId}]`;
+    this.logger.info(`${logPrefix} Starting streamHandler for input: "${input.slice(0, 50)}${input.length > 50 ? '...' : ''}"`);
 
     const aiProvider = this.context.aiProvider;
     if (!aiProvider) throw new Error('AI Provider not initialized');
@@ -52,119 +55,171 @@ export class Hex2077Tool extends BaseTool {
     const fullPrompt: AIMessage[] = [...history, { role: 'user', content: input }];
 
     try {
-      // --- 1. 意图策略识别 (Strategist) ---
-      yield { type: 'status' as const, data: { agent: 'Response Strategist', message: '正在分析意图...' } };
-      const { typeCode, strategyTag } = await this.identifyStrategy(aiProvider, fullPrompt);
+      // --- 1. 意图调度决策 (Strategist) ---
+      yield { type: 'status' as const, data: { agent: 'Response Strategist', message: '分析意图并制定调度计划...' } };
+      const { typeCode, strategyTag, agentsToCall, keywords } = await this.strategize(aiProvider, fullPrompt, logPrefix);
+      this.logger.info(`${logPrefix} Strategy decided: ${strategyTag}, Agents: [${agentsToCall.join(', ')}], Keywords: [${keywords.join(', ')}]`);
+      
       yield { type: 'strategy' as const, data: strategyTag };
-      yield { type: 'status' as const, data: { agent: 'Response Strategist', message: `识别到策略: ${strategyTag}` } };
+      yield { type: 'status' as const, data: { agent: 'Response Strategist', message: `制定完成: 意图 [${typeCode}], 调度 Agent: [${agentsToCall.join(', ')}]` } };
 
-      // --- 2. 动态分支：闲聊/简单回应直接退出 ---
-      if (typeCode === 'E') {
-        yield* this.handleSimpleChat(aiProvider, fullPrompt);
-        yield { type: 'done' as const, data: {} };
-        return;
+      // --- 2. 动态并行调度 (Agent Dispatcher) ---
+      yield { type: 'status' as const, data: { agent: 'Multi-Agent', message: '正在并行执行各路 Agent...' } };
+      this.logger.info(`${logPrefix} Dispatching agents: ${agentsToCall.join(', ')}`);
+      const facts = await this.dispatchAgents(aiProvider, agentsToCall, input, fullPrompt, keywords, logPrefix);
+      this.logger.info(`${logPrefix} Agents execution completed. Facts gathered (length: ${facts.length})`);
+
+      // --- 3. 最终响应生成 (Identity Shaper) ---
+      yield { type: 'status' as const, data: { agent: 'Identity Shaper', message: '整合事实并重塑风格...' } };
+      this.logger.info(`${logPrefix} Generating final response...`);
+      
+      let finalContent = '';
+      for await (const chunk of this.generateFinalResponse(aiProvider, typeCode, input, facts)) {
+        if (chunk.type === 'content') finalContent += chunk.data;
+        yield chunk;
       }
 
-      // --- 3. 并行干货提取 (Knowledge & Project) ---
-      yield { type: 'status' as const, data: { agent: 'Multi-Agent', message: '正在并行提取知识库与项目数据...' } };
-      const facts = await this.extractFacts(aiProvider, typeCode, input, fullPrompt);
-
-      // --- 4. 角色合并：身份塑造 (Identity Shaper) ---
-      yield { type: 'status' as const, data: { agent: 'Identity Shaper', message: '正在合并事实并重塑风格...' } };
-      yield* this.generateFinalResponse(aiProvider, typeCode, input, facts);
-
+      this.logger.info(`${logPrefix} Summary: 
+        Input: "${input.slice(0, 100)}${input.length > 100 ? '...' : ''}"
+        Output: "${finalContent.slice(0, 100)}${finalContent.length > 100 ? '...' : ''}"
+        Total Length: ${finalContent.length} chars`);
+      
+      this.logger.info(`${logPrefix} streamHandler completed successfully.`);
       yield { type: 'done' as const, data: {} };
     } catch (error: any) {
-      this.logger.error(`[Hex2077Tool] ERROR: ${error.message}`);
+      this.logger.error(`${logPrefix} ERROR: ${error.message}`);
       throw error;
     }
   }
 
-  private async identifyStrategy(aiProvider: AIProvider, fullPrompt: AIMessage[]): Promise<{ typeCode: string, strategyTag: string }> {
+  private async strategize(aiProvider: AIProvider, fullPrompt: AIMessage[], logPrefix: string): Promise<{ typeCode: string, strategyTag: string, agentsToCall: string[], keywords: string[] }> {
     const builtinTools = [{ google_search: {} }, { url_context: {} }];
-    const strategyPrompt = `${strategy}\n请判断问题类型（A-F），并以 "[Strategy: 类型X]" 格式输出。`;
+    // 结合 orchestrator 与 strategy 进行决策
+    const strategyPrompt = `${orchestrator}\n\n${strategy}\n\n请严格基于上述逻辑输出。`;
+    this.logger.info(`${logPrefix} Calling Strategizer AI...`);
     const strategyRes = await aiProvider.generateContent(fullPrompt, builtinTools, strategyPrompt);
+    
+    // 匹配 [Strategy: 类型X]
     const strategyMatch = strategyRes.content?.match(/\[Strategy: 类型\s*([A-F])\s*\]/);
     const typeCode = strategyMatch ? strategyMatch[1] : 'E';
+    
+    // 匹配 [Call: Agent1, Agent2...]
+    const callMatch = strategyRes.content?.match(/\[Call:\s*([^\]]+)\s*\]/);
+    const agentsToCall = callMatch ? callMatch[1].split(',').map(a => a.trim()) : ['PersonaChat'];
+
+    // 匹配 [Keywords:词1, 词2...]
+    const keywordMatch = strategyRes.content?.match(/\[Keywords:\s*([^\]]+)\s*\]/);
+    const keywords = keywordMatch && keywordMatch[1] !== 'None' 
+      ? keywordMatch[1].split(',').map(k => k.trim()) 
+      : [];
+    
     return { 
       typeCode, 
-      strategyTag: `[Strategy: 类型${typeCode}]` 
+      strategyTag: `[Strategy: 类型${typeCode}]`,
+      agentsToCall,
+      keywords
     };
   }
 
-  private async *handleSimpleChat(aiProvider: AIProvider, fullPrompt: AIMessage[]): AsyncGenerator<{ type: 'status' | 'content' | 'strategy' | 'done', data: any }> {
-    yield { type: 'status' as const, data: { agent: 'Identity Shaper', message: '正在以 何夕2077 风格快速响应...' } };
-    const chatPrompt = `
-${persona}
-${style}
-${antiHallucination}
+  private async dispatchAgents(aiProvider: AIProvider, agents: string[], input: string, fullPrompt: AIMessage[], keywords: string[], logPrefix: string): Promise<string> {
+    const tasks: Promise<string>[] = [];
 
-任务：以 何夕2077 风格直接回复用户的闲聊，不要废话。`;
-    const builtinTools = [{ google_search: {} }, { url_context: {} }];
-    
-    if (aiProvider.generateStream) {
-      const stream = aiProvider.generateStream(fullPrompt, builtinTools, chatPrompt);
-      for await (const chunk of stream) yield { type: 'content' as const, data: chunk };
-    } else {
-      const chatRes = await aiProvider.generateContent(fullPrompt, builtinTools, chatPrompt);
-      yield { type: 'content' as const, data: chatRes.content.replace(/\[Strategy: 类型.\]/g, '').trim() };
+    // 动态映射并加入任务队列
+    if (agents.includes('KnowledgeExpert')) {
+      tasks.push(this.callKnowledgeExpert(aiProvider, input, fullPrompt, keywords, logPrefix));
     }
-  }
+    if (agents.includes('ProjectArchivist')) {
+      tasks.push(this.callProjectArchivist(aiProvider, fullPrompt, logPrefix));
+    }
+    if (agents.includes('AIInsightAgent')) {
+      tasks.push(this.callAIInsightAgent(aiProvider, input, fullPrompt, logPrefix));
+    }
+    if (agents.includes('BusinessConsultant')) {
+      tasks.push(this.callBusinessConsultant(aiProvider, input, fullPrompt, logPrefix));
+    }
 
-  private async extractFacts(aiProvider: AIProvider, typeCode: string, input: string, fullPrompt: AIMessage[]): Promise<string> {
-    const kbTask = async () => {
-      if (!['A', 'B', 'C', 'D', 'F'].includes(typeCode)) return 'N/A';
-      const kbRes = await this.context.knowledgeBaseService.queryKnowledge(input, { limit: 3 });
-      if (!kbRes) return 'No specific knowledge found in user uploads.';
-      const kbPrompt = `${knowledge}\n\n任务：基于以下从用户私有知识库中检索到的内容，提取并总结与用户问题相关的干货。\n参考背景：\n${kbRes}`;
-      return (await aiProvider.generateContent(fullPrompt, [], kbPrompt)).content;
-    };
+    // 处理 PersonaChat 这种简单的直接通过最终 Identity Shaper 处理或提供上下文
+    if (agents.includes('PersonaChat') && tasks.length === 0) {
+      return 'Simple Interaction Mode.';
+    }
 
-    const aiUpdateTask = async () => {
-      // 针对 AI 行业洞察、技术深度、或跨界分析等类型，并行提取 AI 基础知识库及更新
-      if (!['A', 'B', 'C'].includes(typeCode)) return 'N/A';
-      const aiBasePrompt = `${knowledge}\n\n任务：作为领域专家，请提供关于 "${input}" 的 AI 基础认知逻辑、行业共识判断及当前最新行业动态。`;
-      return (await aiProvider.generateContent(fullPrompt, [], aiBasePrompt)).content;
-    };
-
-    const projectTask = async () => {
-      const isProjectQuery = input.includes('项目') || input.includes('做过') || input.includes('经历') || input.includes('作品');
-      if (!['A', 'F'].includes(typeCode) && !isProjectQuery) return 'N/A';
-      return (await aiProvider.generateContent(fullPrompt, [], projects)).content;
-    };
-
-    const [kbRes, aiUpdateRes, projectRes] = await Promise.all([kbTask(), aiUpdateTask(), projectTask()]);
+    const results = await Promise.all(tasks);
     
-    // 汇总各路事实
+    // 聚合各路事实数据
     let combinedFacts = '';
-    if (kbRes !== 'N/A') combinedFacts += `【用户知识库】\n${kbRes}\n\n`;
-    if (aiUpdateRes !== 'N/A') combinedFacts += `【AI基础知识库及更新】\n${aiUpdateRes}\n\n`;
-    if (projectRes !== 'N/A') combinedFacts += `【个人项目履历】\n${projectRes}\n`;
+    let resultIdx = 0;
+    if (agents.includes('KnowledgeExpert')) combinedFacts += `【用户知识库】\n${results[resultIdx++]}\n\n`;
+    if (agents.includes('ProjectArchivist')) combinedFacts += `【个人项目履历】\n${results[resultIdx++]}\n\n`;
+    if (agents.includes('AIInsightAgent')) combinedFacts += `【AI行业见解】\n${results[resultIdx++]}\n\n`;
+    if (agents.includes('BusinessConsultant')) combinedFacts += `【商务合作建议】\n${results[resultIdx++]}\n`;
 
     return combinedFacts.trim() || 'No relevant facts found.';
   }
 
+  // --- Sub-Agents 实操逻辑 ---
+
+  private async callKnowledgeExpert(aiProvider: AIProvider, input: string, fullPrompt: AIMessage[], keywords: string[], logPrefix: string): Promise<string> {
+    const query = keywords.length > 0 ? keywords.join(' ') : input;
+    this.logger.info(`${logPrefix} [KnowledgeExpert] Querying KB with: "${query}"`);
+    const kbRes = await this.context.knowledgeBaseService.queryKnowledge(query, { 
+      limit: 3,
+      skipAiSearch: keywords.length > 0 // 如果已经有关键词，跳过 AI 生成
+    });
+    if (!kbRes) {
+      this.logger.info(`${logPrefix} [KnowledgeExpert] No relevant knowledge found.`);
+      return 'No specific knowledge found.';
+    }
+    this.logger.info(`${logPrefix} [KnowledgeExpert] Knowledge found (length: ${kbRes.length}). Extracting dry goods...`);
+    const kbPrompt = `${knowledge}\n\n任务：从以下内容中提取与用户问题【直接相关】的干货点。\n要求：以无序列表输出，每点不超过 30 字，严禁润色或增加前言后语。\n内容：\n${kbRes}`;
+    // 明确不使用 builtinTools
+    const res = await aiProvider.generateContent(fullPrompt, [], kbPrompt);
+    this.logger.info(`${logPrefix} [KnowledgeExpert] Dry goods extracted.`);
+    return res.content;
+  }
+
+  private async callProjectArchivist(aiProvider: AIProvider, fullPrompt: AIMessage[], logPrefix: string): Promise<string> {
+    this.logger.info(`${logPrefix} [ProjectArchivist] Screening project archives...`);
+    const projectPrompt = `${projects}\n\n任务：筛选与当前问题相关的项目经历。\n要求：仅提供项目名和核心成果（单句描述），严禁背景介绍。`;
+    // 明确不使用 builtinTools
+    const res = await aiProvider.generateContent(fullPrompt, [], projectPrompt);
+    this.logger.info(`${logPrefix} [ProjectArchivist] Screening completed.`);
+    return res.content;
+  }
+
+  private async callAIInsightAgent(aiProvider: AIProvider, input: string, fullPrompt: AIMessage[], logPrefix: string): Promise<string> {
+    this.logger.info(`${logPrefix} [AIInsightAgent] Generating AI insights...`);
+    const aiInsightPrompt = `${knowledge}\n\n任务：针对 "${input}" 提供核心逻辑判断。\n要求：给出 1-2 条犀利的结论，单句长度控制在 40 字以内。`;
+    const res = await aiProvider.generateContent(fullPrompt, [], aiInsightPrompt);
+    this.logger.info(`${logPrefix} [AIInsightAgent] Insights generated.`);
+    return res.content;
+  }
+
+  private async callBusinessConsultant(aiProvider: AIProvider, input: string, fullPrompt: AIMessage[], logPrefix: string): Promise<string> {
+    this.logger.info(`${logPrefix} [BusinessConsultant] Analyzing business potential...`);
+    const bizPrompt = `${cooperation}\n\n任务：分析合作潜力。\n要求：仅输出 1 条关键对接思路，不要寒暄。`;
+    const res = await aiProvider.generateContent(fullPrompt, [], bizPrompt);
+    this.logger.info(`${logPrefix} [BusinessConsultant] Analysis completed.`);
+    return res.content;
+  }
+
   private async *generateFinalResponse(aiProvider: AIProvider, typeCode: string, input: string, facts: string): AsyncGenerator<{ type: 'status' | 'content' | 'strategy' | 'done', data: any }> {
-    // 完全还原原始的 identityPrompt 文案
     const identityPrompt = `
 ${persona}
 ${style}
 ${antiHallucination}
 ${typeCode === 'F' ? cooperation : ''}
 
-任务：基于以下事实，以 何夕2077 的身份撰写回复。
-要求：
-1. 专业的亲和力（ISTJ）：删除 AI 废话，但保持表达的温度。
-2. 激发欲望：通过深度洞察和反问，引导用户继续深入探讨。
-3. 逻辑严密：以事实为准，提供有条理的、启发性的信息。
-4. 严格遵守反幻觉协议：确保所有信息（包括模型名称、具体术语、数字、链接）均保持字面一致，严禁擅自篡改或升级。
-${typeCode === 'F' ? '5. 商务对接：专业、温和且高效地引导对方进一步合作。' : ''}
+任务：以 何夕2077 的身份，istj的人格回复。
+核心准则：
+1. 极简主义：能用一句话说清楚的绝不用两句。
+2. 结论先行：第一句直接抛出判断或核心答案。
+3. 拒绝 AI 味：删除“首先、其次、总之”、“希望能帮到你”等所有废话。
+4. 句式习惯：短促、有力，多用陈述句和反问句，少用修饰词。
 
-收集到的事实：
+收集到的事实（仅供参考，请根据事实重构逻辑，不要复述）：
 ${facts}
 `;
 
-    // 还原原始的 finalInput 文案
     const finalInput = `针对用户输入 "${input}"，整合事实并以你的语感回复。`;
     const builtinTools = [{ google_search: {} }, { url_context: {} }];
 

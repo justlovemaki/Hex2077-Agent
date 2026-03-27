@@ -32,9 +32,11 @@ export default async function chatRoutes(fastify: FastifyInstance, options: {
     }
 
     const fingerprint = FingerprintHelper.getFingerprint(request);
+    const sessionId = (request.headers['x-session-id'] as string) || 'unknown';
     const requestId = Math.random().toString(36).substring(2, 7);
+    const showDebug = process.env.DEBUG_LOGS === 'true';
     
-    fastify.log.info({ fingerprint, requestId, input: processedInput }, 'User message received');
+    if (showDebug) fastify.log.info({ fingerprint, sessionId, requestId, input: processedInput }, 'User message received');
     
     reply.raw.setHeader('Content-Type', 'text/event-stream');
     reply.raw.setHeader('Cache-Control', 'no-cache');
@@ -61,15 +63,20 @@ export default async function chatRoutes(fastify: FastifyInstance, options: {
       const tool = new Hex2077Tool(context, logger);
       
       let fullResponse = '';
-      for await (const chunk of tool.streamHandler({ input: processedInput, history })) {
-        if (chunk.type === 'strategy') {
+      for await (const chunk of tool.streamHandler({ 
+        input: processedInput, 
+        history, 
+        fingerprint, 
+        sessionId 
+      })) {
+        if (chunk.type === 'strategy' && showDebug) {
           fastify.log.info({ requestId, strategy: chunk.data }, 'Strategy identified');
         }
         if (chunk.type === 'content') fullResponse += chunk.data;
         reply.raw.write(`data: ${JSON.stringify(chunk)}\n\n`);
       }
       
-      fastify.log.info({ requestId, responseLength: fullResponse.length }, 'Assistant response completed');
+      if (showDebug) fastify.log.info({ requestId, responseLength: fullResponse.length }, 'Assistant response completed');
     } catch (err: any) {
       fastify.log.error({ requestId, error: err.message }, 'Chat error');
       reply.raw.write(`data: ${JSON.stringify({ type: 'content', data: `⚠️ 错误: ${err.message}` })}\n\n`);

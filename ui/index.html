@@ -154,6 +154,7 @@
             const [messages, setMessages] = useState([]);
             const [placeholder, setPlaceholder] = useState('输入...');
             const [fingerprint, setFingerprint] = useState('');
+            const [sessionId, setSessionId] = useState('');
             const [input, setInput] = useState('');
             const [loading, setLoading] = useState(false);
             const [agentStatus, setAgentStatus] = useState(null);
@@ -178,6 +179,13 @@
                     localStorage.setItem('hex_fingerprint', fp);
                 }
                 setFingerprint(fp);
+
+                let sid = localStorage.getItem(`hex_sid_${fp}`);
+                if (!sid) {
+                    sid = 'sid_' + Math.random().toString(36).substr(2, 9);
+                    localStorage.setItem(`hex_sid_${fp}`, sid);
+                }
+                setSessionId(sid);
 
                 const savedHistory = localStorage.getItem(`hex_history_${fp}`);
                 if (savedHistory) {
@@ -211,6 +219,11 @@
                     const preset = CONFIG_PRESETS[Math.floor(Math.random() * CONFIG_PRESETS.length)];
                     setMessages([{ role: 'assistant', content: preset.greeting }]);
                     setPlaceholder(preset.placeholder);
+                    
+                    // 生成新的会话 ID
+                    const newSid = 'sid_' + Math.random().toString(36).substr(2, 9);
+                    setSessionId(newSid);
+                    localStorage.setItem(`hex_sid_${fingerprint}`, newSid);
                 }
             };
 
@@ -226,7 +239,11 @@
                 try {
                     const response = await fetch('/api/chat', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'X-Fingerprint': fingerprint },
+                        headers: { 
+                            'Content-Type': 'application/json', 
+                            'X-Fingerprint': fingerprint,
+                            'X-Session-Id': sessionId
+                        },
                         body: JSON.stringify({ input, history: messages.slice(-10).map(m => ({ role: m.role, content: m.content })) })
                     });
 
