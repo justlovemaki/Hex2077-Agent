@@ -6,11 +6,13 @@ import { FingerprintHelper } from '../utils/Fingerprint.js';
 
 export default async function chatRoutes(fastify: FastifyInstance, options: { 
   kbService: any;
+  historyService?: any;
   maxInputLength?: number;
   maxHistoryRounds?: number;
 }) {
   const { 
     kbService, 
+    historyService,
     maxInputLength = 500, 
     maxHistoryRounds = 30 
   } = options;
@@ -54,7 +56,11 @@ export default async function chatRoutes(fastify: FastifyInstance, options: {
 
     try {
       const aiProvider = getAIProvider();
-      const context: ServiceContext = { aiProvider, knowledgeBaseService: kbService };
+      const context: ServiceContext = { 
+        aiProvider, 
+        knowledgeBaseService: kbService,
+        historyService
+      };
       const logger: LogService = { 
         info: (m) => fastify.log.info(m), 
         error: (m) => fastify.log.error(m), 

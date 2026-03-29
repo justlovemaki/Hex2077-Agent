@@ -7,12 +7,15 @@ export interface KnowledgeIndexEntry {
   id: string;
   title: string;
   date: string;
-  parts: {
-    id: string;
-    topic: string;
-    summary: string;
-    filePath: string;
-  }[];
+  skipAI?: boolean;
+    parts: {
+      id: string;
+      topic: string;
+      summary: string;
+      keywords?: string[];
+      filePath: string;
+    }[];
+
 }
 
 export class SimpleKnowledgeBaseService {
@@ -68,24 +71,31 @@ export class SimpleKnowledgeBaseService {
     return await this.getIndex();
   }
 
-  async addItem(title: string, content: string) {
+  async addItem(title: string, content: string, options?: { skipAI?: boolean }) {
     const docId = Math.random().toString(36).substring(2, 11);
     const docDir = path.join(this.baseDir, docId);
+    const skipAI = options?.skipAI === true;
     
     try {
       await fs.mkdir(docDir, { recursive: true });
 
-      this.log(`Starting processing for document: ${title}`);
+      this.log(`Starting processing for document: ${title}${skipAI ? ' (Skip AI Processing)' : ''}`);
 
-      // --- 阶段 1: 语义拆分 ---
-      const parts = await this.partitionContent(title, content);
-      this.log(`AI identified ${parts.length} topics for ${title}.`);
+      let parts: { topic: string, content: string }[] = [];
+      if (skipAI) {
+        // --- 跳过 AI 语义拆分 ---
+        parts = [{ topic: "全文内容", content }];
+      } else {
+        // --- 阶段 1: 语义拆分 ---
+        parts = await this.partitionContent(title, content);
+        this.log(`AI identified ${parts.length} topics for ${title}.`);
+      }
 
       // --- 阶段 2: 存储文件 + 建立索引 ---
       const processedParts = await this.processParts(docId, parts);
 
       const index = await this.getIndex();
-      index.push({ id: docId, title, date: new Date().toISOString(), parts: processedParts });
+      index.push({ id: docId, title, date: new Date().toISOString(), skipAI, parts: processedParts });
       await this.saveIndex(index);
 
       this.log(`Document processing completed: ${docId} (${title})`);
@@ -121,10 +131,22 @@ ${content}`;
     const processedParts: any[] = [];
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i];
-      this.log(`Generating summary for topic: ${part.topic}`);
       
-      const summaryPrompt = `为关于“${part.topic}”的内容生成 50 字以内摘要：\n${part.content}`;
-      const summaryRes = await this.aiProvider.generateContent(summaryPrompt, [], "提取摘要。");
+      this.log(`Generating AI summary & keywords for topic: ${part.topic}`);
+      const summaryPrompt = `针对关于“${part.topic}”的内容，请完成以下任务：
+1. 生成 50 字以内的简洁摘要。
+2. 提取所有可能的、对搜索有帮助的核心关键词和短语（涵盖技术点、人物、公司、概念、日期等）。
+
+返回严格 JSON 格式：{"summary": "...", "keywords": ["...", "..."]}
+
+内容：\n${part.content}`;
+
+      const aiRes = await AIHelper.getJsonResponse<{ summary: string, keywords: string[] }>(
+        this.aiProvider,
+        summaryPrompt,
+        "文档索引专家。",
+        { summary: part.content.slice(0, 50), keywords: [part.topic] }
+      );
       
       const fileName = `part_${i}.md`;
       const relativePath = path.join(docId, fileName);
@@ -136,7 +158,8 @@ ${content}`;
       processedParts.push({
         id: `part_${i}`,
         topic: part.topic,
-        summary: summaryRes.content.trim(),
+        summary: aiRes.summary.trim(),
+        keywords: aiRes.keywords,
         filePath: relativePath
       });
     }
@@ -154,6 +177,20 @@ ${content}`;
 
     const index = await this.getIndex();
     await this.saveIndex(index.filter(d => d.id !== docId));
+  }
+
+  async updatePartTopic(docId: string, partId: string, newTopic: string) {
+    this.log(`Updating topic for ${docId}/${partId} to "${newTopic}"`);
+    const index = await this.getIndex();
+    const doc = index.find(d => d.id === docId);
+    if (!doc) throw new Error('Document not found');
+    
+    const part = doc.parts.find(p => p.id === partId);
+    if (!part) throw new Error('Part not found');
+    
+    part.topic = newTopic;
+    await this.saveIndex(index);
+    return { success: true };
   }
 
   private async generateKeywords(query: string): Promise<{ match: string[], association: string[] }> {
@@ -200,6 +237,7 @@ ${content}`;
             docTitle: doc.title,
             topic: p.topic, 
             summary: p.summary,
+            keywords: p.keywords || [],
             filePath: p.filePath 
           });
         });
@@ -213,7 +251,8 @@ ${content}`;
         return allTopicIndex.filter(p => 
           p.topic.toLowerCase().includes(kwLower) || 
           p.summary.toLowerCase().includes(kwLower) ||
-          p.docTitle.toLowerCase().includes(kwLower)
+          p.docTitle.toLowerCase().includes(kwLower) ||
+          p.keywords.some((k: string) => k.toLowerCase().includes(kwLower))
         ).map(m => `${m.docId}|${m.partId}`);
       }));
 
@@ -243,8 +282,9 @@ ${content}`;
 
 用户查询: "${query}"
 
-候选索引：
-${limitedCandidates.map((p, i) => `${i + 1}. [ID: ${p.docId}|${p.partId}] 文档: ${p.docTitle}\n   主题: ${p.topic}\n   摘要: ${p.summary}`).join('\n')}`;
+    候选索引：
+${limitedCandidates.map((p, i) => `${i + 1}. [ID: ${p.docId}|${p.partId}] 文档: ${p.docTitle}\n   主题: ${p.topic}\n   关键词: ${p.keywords.join(', ')}\n   摘要: ${p.summary}`).join('\n')}`;
+
 
       const selectedKeys = await AIHelper.getJsonResponse<string[]>(
         this.aiProvider,

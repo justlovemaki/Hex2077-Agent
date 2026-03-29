@@ -23,6 +23,8 @@
     "@fastify/cors": "^10.0.0",
     "@fastify/multipart": "^9.0.0",
     "@fastify/static": "^8.0.0",
+    "@openclaw-china/channels": "^2026.3.22",
+    "@wechatbot/wechatbot": "^2.0.1",
     "dotenv": "^16.4.5",
     "fastify": "^5.0.0",
     "jsonwebtoken": "^9.0.3",

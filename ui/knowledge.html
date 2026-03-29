@@ -25,10 +25,12 @@
             const [isLoggedIn, setIsLoggedIn] = useState(false);
             const [password, setPassword] = useState('');
             const [items, setItems] = useState([]);
-            const [newItem, setNewItem] = useState({ title: '', content: '' });
+            const [newItem, setNewItem] = useState({ title: '', content: '', skipAI: false });
+            const [fileSkipAI, setFileSkipAI] = useState(false);
             const [loading, setLoading] = useState(false);
             const [previewContent, setPreviewContent] = useState(null);
             const [isDarkMode, setIsDarkMode] = useState(true);
+            const [editingTopic, setEditingTopic] = useState({ docId: null, partId: null, value: '' });
             const fileInputRef = useRef(null);
 
             useEffect(() => {
@@ -88,6 +90,7 @@
                 if (!file) return;
                 setLoading(true);
                 const formData = new FormData();
+                formData.append('skipAI', fileSkipAI.toString());
                 formData.append('file', file);
                 try {
                     const res = await fetch('/api/knowledge/upload', {
@@ -95,8 +98,10 @@
                         headers: { 'Authorization': sessionStorage.getItem('kb_token') },
                         body: formData
                     });
-                    if (res.ok) fetchItems();
-                    else { const err = await res.json(); alert(`上传失败: ${err.error}`); }
+                    if (res.ok) {
+                        fetchItems();
+                        setFileSkipAI(false);
+                    } else { const err = await res.json(); alert(`上传失败: ${err.error}`); }
                 } catch (e) { alert('上传异常'); }
                 finally { setLoading(false); if (fileInputRef.current) fileInputRef.current.value = ''; }
             };
@@ -108,6 +113,7 @@
             };
 
             const handlePreview = async (docId, partId) => {
+                if (editingTopic.docId === docId && editingTopic.partId === partId) return; // 正在编辑时不触发预览
                 try {
                     const res = await fetch(`/api/knowledge/part/${docId}/${partId}`, {
                         headers: { 'Authorization': sessionStorage.getItem('kb_token') }
@@ -115,6 +121,24 @@
                     const data = await res.json();
                     setPreviewContent(data.content);
                 } catch (e) { alert('读取失败'); }
+            };
+
+            const handleTopicUpdate = async (docId, partId) => {
+                if (!editingTopic.value.trim()) return setEditingTopic({ docId: null, partId: null, value: '' });
+                try {
+                    const res = await fetch(`/api/knowledge/part/${docId}/${partId}`, {
+                        method: 'PATCH',
+                        headers: { 
+                            'Authorization': sessionStorage.getItem('kb_token'),
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ topic: editingTopic.value.trim() })
+                    });
+                    if (res.ok) {
+                        setEditingTopic({ docId: null, partId: null, value: '' });
+                        fetchItems();
+                    } else { alert('更新失败'); }
+                } catch (e) { alert('更新异常'); }
             };
 
             const handleAdd = async () => {
@@ -133,7 +157,7 @@
                         body: JSON.stringify(newItem)
                     });
                     if (res.ok) {
-                        setNewItem({ title: '', content: '' });
+                        setNewItem({ title: '', content: '', skipAI: false });
                         fetchItems();
                     } else {
                         const err = await res.json();
@@ -145,6 +169,7 @@
                     setLoading(false);
                 }
             };
+
 
             if (!isLoggedIn) {
                 return (
@@ -192,6 +217,10 @@
                                 <div className="grid gap-4">
                                     <input type="text" placeholder="资料标题" className="w-full bg-[var(--bg-color)] text-[var(--text-main)] border border-[var(--border-color)] rounded-xl p-3 outline-none focus:border-[var(--primary-color)] text-xs" value={newItem.title} onChange={e => setNewItem({...newItem, title: e.target.value})} />
                                     <textarea placeholder="核心干货内容..." className="w-full bg-[var(--bg-color)] text-[var(--text-main)] border border-[var(--border-color)] rounded-xl p-3 outline-none focus:border-[var(--primary-color)] text-xs h-32 resize-none" value={newItem.content} onChange={e => setNewItem({...newItem, content: e.target.value})} />
+                                    <div className="flex items-center gap-2 mt-1">
+                                        <input type="checkbox" id="skipAI" className="accent-[var(--primary-color)]" checked={newItem.skipAI} onChange={e => setNewItem({...newItem, skipAI: e.target.checked})} />
+                                        <label htmlFor="skipAI" className="text-[10px] text-dim cursor-pointer">跳过 AI 自动语义拆分 (仍会生成摘要)</label>
+                                    </div>
                                     <button onClick={handleAdd} disabled={loading} className={`primary-btn py-2 rounded-xl text-xs transition-all ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}>
                                         {loading ? '正在注入...' : '注入知识库'}
                                     </button>
@@ -200,6 +229,10 @@
                             <div className="glass p-6 rounded-2xl space-y-4 flex flex-col justify-center items-center border-dashed border-2 border-[var(--border-color)] hover:border-[var(--primary-color)] transition-colors">
                                 <h2 className="text-lg font-bold">文件上传</h2>
                                 <p className="text-[10px] text-dim text-center">支持 PDF, DOCX, TXT, MD</p>
+                                <div className="flex items-center gap-2 mt-2">
+                                    <input type="checkbox" id="fileSkipAI" className="accent-[var(--primary-color)]" checked={fileSkipAI} onChange={e => setFileSkipAI(e.target.checked)} />
+                                    <label htmlFor="fileSkipAI" className="text-[10px] text-dim cursor-pointer">跳过自动拆分 (仍生成摘要)</label>
+                                </div>
                                 <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".pdf,.docx,.doc,.txt,.md" />
                                 <button onClick={() => fileInputRef.current?.click()} className="px-8 py-3 glass hover:bg-white/10 rounded-xl text-sm font-bold border border-[var(--border-color)]">选择文件</button>
                             </div>
@@ -211,11 +244,33 @@
                                 {items.map(doc => (
                                     <div key={doc.id} className="glass p-4 rounded-xl relative group border border-[var(--border-color)] hover:border-[var(--primary-color)] transition-all">
                                         <button onClick={() => handleDelete(doc.id)} className="absolute top-2 right-2 text-dim hover:text-red-500 opacity-0 group-hover:opacity-100">✕</button>
-                                        <h3 className="font-bold text-[var(--primary-color)] mb-2 truncate pr-6 text-sm">{doc.title}</h3>
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <h3 className="font-bold text-[var(--primary-color)] truncate pr-6 text-sm">{doc.title}</h3>
+                                            {doc.skipAI && <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-500 text-[8px] shrink-0">MANUAL</span>}
+                                        </div>
                                         <div className="space-y-1 mt-3 max-h-32 overflow-y-auto pr-1 scroll-thin">
                                             {doc.parts.map(part => (
                                                 <button key={part.id} onClick={() => handlePreview(doc.id, part.id)} className="w-full text-left px-2 py-1.5 rounded bg-black/20 hover:bg-black/40 text-[10px] flex justify-between items-center group/part">
-                                                    <span className="truncate flex-1 text-dim group-hover/part:text-white">#{part.topic}</span>
+                                                <div className="flex-1 truncate">
+                                                    {editingTopic.docId === doc.id && editingTopic.partId === part.id ? (
+                                                        <div className="flex items-center gap-1">
+                                                            <input autoFocus type="text" className="bg-black/40 text-[10px] text-white px-1 py-0.5 rounded outline-none border border-[var(--primary-color)] w-full" value={editingTopic.value} onChange={e => setEditingTopic({...editingTopic, value: e.target.value})} onBlur={() => handleTopicUpdate(doc.id, part.id)} onKeyDown={e => e.key === 'Enter' && handleTopicUpdate(doc.id, part.id)} onClick={e => e.stopPropagation()} />
+                                                        </div>
+                                                    ) : (
+                                                        <div className="flex items-center gap-1 group/topic">
+                                                            <span className="text-dim group-hover/part:text-white transition-colors">#{part.topic}</span>
+                                                            <button className="opacity-0 group-hover/part:opacity-100 text-[9px] text-[var(--primary-color)] ml-1 hover:underline" onClick={(e) => { e.stopPropagation(); setEditingTopic({ docId: doc.id, partId: part.id, value: part.topic }); }}>编辑</button>
+                                                        </div>
+                                                    )}
+                                                    {part.keywords && part.keywords.length > 0 && (
+
+                                                            <div className="flex gap-1 mt-0.5 overflow-hidden">
+                                                                {part.keywords.map((k, i) => (
+                                                                    <span key={i} className="px-1 py-0 bg-white/5 rounded-[2px] text-[7px] text-dim whitespace-nowrap">{k}</span>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                     <span className="text-[9px] text-dim ml-2 shrink-0">预览 &rarr;</span>
                                                 </button>
                                             ))}

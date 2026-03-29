@@ -5,12 +5,8 @@ services:
     container_name: hex2077-agent
     ports:
       - "3000:3000"
-    environment:
-      - AI_API_KEY=your-api-key-here
-      - AI_BASE_URL=https://api.openai.com/v1
-      - AI_MODEL=gpt-4o
-      - KB_PASSWORD=admin123
-      - PORT=3000
+    env_file:
+      - .env
     volumes:
       - ./data:/app/data
     restart: always

@@ -40,6 +40,12 @@ export interface KnowledgeBaseService {
   queryKnowledge(query: string, options?: { limit?: number, skipAiSearch?: boolean }): Promise<string>;
 }
 
+export interface HistoryService {
+  getHistory(sessionId: string): AIMessage[];
+  pushMessage(sessionId: string, message: AIMessage): void;
+  clearHistory(sessionId: string): void;
+}
+
 export interface LogService {
   info(msg: string): void;
   error(msg: string): void;
@@ -49,4 +55,5 @@ export interface LogService {
 export interface ServiceContext {
   aiProvider?: AIProvider;
   knowledgeBaseService: KnowledgeBaseService;
+  historyService?: HistoryService;
 }

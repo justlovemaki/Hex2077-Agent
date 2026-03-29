@@ -44,24 +44,41 @@ export default async function knowledgeRoutes(fastify: FastifyInstance, options:
   fastify.post('/knowledge/upload', { preHandler: checkAuth }, async (request: any, reply: any) => {
     const data = await request.file();
     if (!data) return reply.status(400).send({ error: 'No file uploaded' });
+    
+    // 从字段中读取 skipAI
+    const skipAI = data.fields?.skipAI?.value === 'true';
+
     try {
       const buffer = await data.toBuffer();
       const text = await docProcessor.parse(data.filename, buffer);
-      return await kbService.addItem(data.filename, text);
+      return await kbService.addItem(data.filename, text, { skipAI });
     } catch (err: any) {
       return reply.status(500).send({ error: err.message });
     }
   });
 
   fastify.post('/knowledge', { preHandler: checkAuth }, async (request) => {
-    const { title, content } = request.body as { title: string; content: string };
-    return await kbService.addItem(title, content);
+    const { title, content, skipAI } = request.body as { title: string; content: string; skipAI?: boolean };
+    return await kbService.addItem(title, content, { skipAI });
   });
 
   fastify.delete('/knowledge/:id', { preHandler: checkAuth }, async (request) => {
     const { id } = request.params as { id: string };
     await kbService.deleteDocument(id);
     return { success: true };
+  });
+
+  fastify.patch('/knowledge/part/:docId/:partId', { preHandler: checkAuth }, async (request, reply) => {
+    const { docId, partId } = request.params as { docId: string; partId: string };
+    const { topic } = request.body as { topic: string };
+    if (!topic) return reply.status(400).send({ error: 'Missing topic' });
+    
+    try {
+      await kbService.updatePartTopic(docId, partId, topic);
+      return { success: true };
+    } catch (err: any) {
+      return reply.status(500).send({ error: err.message });
+    }
   });
 
   fastify.get('/knowledge/part/:docId/:partId', { preHandler: checkAuth }, async (request, reply) => {

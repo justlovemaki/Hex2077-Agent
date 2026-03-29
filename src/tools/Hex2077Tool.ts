@@ -31,7 +31,7 @@ export class Hex2077Tool extends BaseTool {
     this.logger = logger;
   }
 
-  async handler(args: { input: string; history?: AIMessage[] }): Promise<{ strategy: string; content: string; steps: any[] }> {
+  async handler(args: { input: string; history?: AIMessage[]; fingerprint?: string; sessionId?: string }): Promise<{ strategy: string; content: string; steps: any[] }> {
     const results: any[] = [];
     let content = '';
     let strategyTag = '';
@@ -74,7 +74,7 @@ export class Hex2077Tool extends BaseTool {
       this.logger.info(`${logPrefix} Generating final response...`);
       
       let finalContent = '';
-      for await (const chunk of this.generateFinalResponse(aiProvider, typeCode, input, facts)) {
+      for await (const chunk of this.generateFinalResponse(aiProvider, typeCode, fullPrompt, facts)) {
         if (chunk.type === 'content') finalContent += chunk.data;
         yield chunk;
       }
@@ -202,7 +202,7 @@ export class Hex2077Tool extends BaseTool {
     return res.content;
   }
 
-  private async *generateFinalResponse(aiProvider: AIProvider, typeCode: string, input: string, facts: string): AsyncGenerator<{ type: 'status' | 'content' | 'strategy' | 'done', data: any }> {
+  private async *generateFinalResponse(aiProvider: AIProvider, typeCode: string, fullPrompt: AIMessage[], facts: string): AsyncGenerator<{ type: 'status' | 'content' | 'strategy' | 'done', data: any }> {
     const identityPrompt = `
 ${persona}
 ${style}
@@ -216,18 +216,17 @@ ${typeCode === 'F' ? cooperation : ''}
 3. 拒绝 AI 味：删除“首先、其次、总之”、“希望能帮到你”等所有废话。
 4. 句式习惯：短促、有力，多用陈述句和反问句，少用修饰词。
 
-收集到的事实（仅供参考，请根据事实重构逻辑，不要复述）：
+收集到的事实（仅供参考，请根据事实重构逻辑并以你的语感回复，不要复述）：
 ${facts}
 `;
 
-    const finalInput = `针对用户输入 "${input}"，整合事实并以你的语感回复。`;
     const builtinTools = [{ google_search: {} }, { url_context: {} }];
 
     if (aiProvider.generateStream) {
-      const stream = aiProvider.generateStream(finalInput, builtinTools, identityPrompt);
+      const stream = aiProvider.generateStream(fullPrompt, builtinTools, identityPrompt);
       for await (const chunk of stream) yield { type: 'content' as const, data: chunk };
     } else {
-      const finalRes = await aiProvider.generateContent(finalInput, builtinTools, identityPrompt);
+      const finalRes = await aiProvider.generateContent(fullPrompt, builtinTools, identityPrompt);
       yield { type: 'content' as const, data: finalRes.content.replace(/\[Strategy: 类型.\]/g, '').trim() };
     }
   }

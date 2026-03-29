@@ -75,6 +75,39 @@ Hex2077-Agent 采用响应式设计，特别针对侧边栏场景进行了优化
 
 ---
 
+## 多平台接入 (Multi-platform Connectivity)
+
+Hex2077-Agent 集成了 [OpenClaw China](https://github.com/BytePioneer-AI/openclaw-china) 适配层，支持将分身无缝接入主流即时通讯 (IM) 工具。
+
+### 1. 支持渠道
+目前已原生支持以下平台：
+- **微信 (WeChat)**: 个人微信 (基于 [wechatbot](https://github.com/corespeed-io/wechatbot))、公众号 (订阅号/服务号)。
+- **企业微信 (WeCom)**: 企业微信自建应用、内部群机器人、微信客服。
+- **飞书 (Feishu)**: 飞书自建应用、群机器人 (支持 WebSocket/Webhook)。
+- **钉钉 (DingTalk)**: 钉钉自建应用、群机器人 (支持 Stream 模式)。
+- **QQ**: QQ 机器人。
+
+### 2. 启用方法
+在 `.env` 中配置对应的 `ENABLED` 变量为 `true` 并填写必要凭据即可开启：
+
+```env
+# 开启适配层总开关
+OPENCLAW_ENABLED=true
+
+# 示例：启用微信个人号
+WECHAT_APP_ENABLED=true
+
+# 示例：启用飞书
+FEISHU_ENABLED=true
+FEISHU_APP_ID=cli_xxxx
+FEISHU_APP_SECRET=your_secret
+```
+
+### 3. 扫码登录 (个人微信)
+当开启 `WECHAT_APP` 渠道后，启动程序会在控制台输出登录二维码 URL，使用微信扫码即可完成授权。系统会自动通过文件持久化 Session，下次启动通常无需重复扫码。
+
+---
+
 ## 免责声明 (Disclaimer)
 
 - 本项目仅供学习和研究使用，不保证在任何情况下都能正常运行。
