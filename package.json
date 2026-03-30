@@ -9,7 +9,8 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "example": "tsc && node dist/examples/simple.js",
-    "start": "tsc && node dist/server.js"
+    "start": "tsc && node dist/server.js",
+    "postinstall": "node scripts/patch-shared.js"
   },
   "keywords": [
     "ai",

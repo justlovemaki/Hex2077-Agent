@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y \
 
 # 复制 package.json 和 package-lock.json
 COPY package*.json ./
+COPY scripts/ ./scripts/
 
 # 安装依赖
 RUN npm install
