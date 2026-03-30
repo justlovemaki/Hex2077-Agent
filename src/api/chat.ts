@@ -26,7 +26,7 @@ export default async function chatRoutes(fastify: FastifyInstance, options: {
   }
 
   fastify.post('/chat', async (request, reply) => {
-    const { input, history = [] } = request.body as { input: string; history?: AIMessage[] };
+    const { input, history = [], ru } = request.body as { input: string; history?: AIMessage[]; ru?: string };
     
     let processedInput = input || '';
     if (processedInput.length > maxInputLength) {
@@ -44,8 +44,9 @@ export default async function chatRoutes(fastify: FastifyInstance, options: {
     reply.raw.setHeader('Cache-Control', 'no-cache');
     reply.raw.setHeader('Connection', 'keep-alive');
 
-    // 校验 history 长度，如果超过限制，以 Stream 结构返回报错提示
-    if (history.length > maxHistoryRounds) {
+    // 校验 history 轮数（仅计算用户对话次数），如果超过限制，以 Stream 结构返回报错提示
+    const userRounds = (history || []).filter(m => m.role === 'user').length;
+    if (userRounds >= maxHistoryRounds) {
       reply.raw.write(`data: ${JSON.stringify({ 
         type: 'content', 
         data: `⚠️ 历史对话记录已达上限(${maxHistoryRounds}轮)，为了保证回复质量，请清理对话后再试。` 
@@ -73,7 +74,8 @@ export default async function chatRoutes(fastify: FastifyInstance, options: {
         input: processedInput, 
         history, 
         fingerprint, 
-        sessionId 
+        sessionId,
+        ru
       })) {
         if (chunk.type === 'strategy' && showDebug) {
           fastify.log.info({ requestId, strategy: chunk.data }, 'Strategy identified');

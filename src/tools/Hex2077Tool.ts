@@ -7,6 +7,7 @@ import { strategy } from '../prompts/strategy.js';
 import { cooperation } from '../prompts/cooperation.js';
 import { antiHallucination } from '../prompts/antiHallucination.js';
 import { orchestrator } from '../prompts/orchestrator.js'; // 引入调度器 prompt
+import { summary } from '../prompts/summary.js'; // 引入总结提示词
 import { AIHelper } from '../utils/AIHelper.js';
 
 export class Hex2077Tool extends BaseTool {
@@ -17,7 +18,8 @@ export class Hex2077Tool extends BaseTool {
     type: 'object',
     properties: {
       input: { type: 'string', description: '对话输入内容' },
-      history: { type: 'array', items: { type: 'object' }, description: '历史对话记录' }
+      history: { type: 'array', items: { type: 'object' }, description: '历史对话记录' },
+      ru: { type: 'string', description: '需要总结的网页链接 (可选)' }
     },
     required: ['input']
   };
@@ -31,7 +33,7 @@ export class Hex2077Tool extends BaseTool {
     this.logger = logger;
   }
 
-  async handler(args: { input: string; history?: AIMessage[]; fingerprint?: string; sessionId?: string }): Promise<{ strategy: string; content: string; steps: any[] }> {
+  async handler(args: { input: string; history?: AIMessage[]; fingerprint?: string; sessionId?: string; ru?: string }): Promise<{ strategy: string; content: string; steps: any[] }> {
     const results: any[] = [];
     let content = '';
     let strategyTag = '';
@@ -43,8 +45,8 @@ export class Hex2077Tool extends BaseTool {
     return { strategy: strategyTag, content, steps: results };
   }
 
-  async *streamHandler(args: { input: string; history?: AIMessage[]; fingerprint?: string; sessionId?: string }): AsyncGenerator<{ type: 'status' | 'content' | 'strategy' | 'done', data: any }> {
-    let { input, history = [], fingerprint = 'unknown', sessionId = 'unknown' } = args;
+  async *streamHandler(args: { input: string; history?: AIMessage[]; fingerprint?: string; sessionId?: string; ru?: string }): AsyncGenerator<{ type: 'status' | 'content' | 'strategy' | 'done', data: any }> {
+    let { input, history = [], fingerprint = 'unknown', sessionId = 'unknown', ru } = args;
     input = AIHelper.cleanInput(input);
     const logPrefix = `[${fingerprint}][${sessionId}]`;
     this.logger.info(`${logPrefix} Starting streamHandler for input: "${input.slice(0, 50)}${input.length > 50 ? '...' : ''}"`);
@@ -57,8 +59,9 @@ export class Hex2077Tool extends BaseTool {
     try {
       // --- 1. 意图调度决策 (Strategist) ---
       yield { type: 'status' as const, data: { agent: 'Response Strategist', message: '分析意图并制定调度计划...' } };
-      const { typeCode, strategyTag, agentsToCall, keywords } = await this.strategize(aiProvider, fullPrompt, logPrefix);
-      this.logger.info(`${logPrefix} Strategy decided: ${strategyTag}, Agents: [${agentsToCall.join(', ')}], Keywords: [${keywords.join(', ')}]`);
+      const { typeCode, strategyTag, agentsToCall, keywords, urls: extractedUrls } = await this.strategize(aiProvider, fullPrompt, logPrefix);
+      const urls = ru ? Array.from(new Set([ru, ...extractedUrls])) : extractedUrls;
+      this.logger.info(`${logPrefix} Strategy decided: ${strategyTag}, Agents: [${agentsToCall.join(', ')}], Keywords: [${keywords.join(', ')}]${urls.length > 0 ? `, URLs: ${urls.join(', ')}` : ''}`);
       
       yield { type: 'strategy' as const, data: strategyTag };
       yield { type: 'status' as const, data: { agent: 'Response Strategist', message: `制定完成: 意图 [${typeCode}], 调度 Agent: [${agentsToCall.join(', ')}]` } };
@@ -66,7 +69,7 @@ export class Hex2077Tool extends BaseTool {
       // --- 2. 动态并行调度 (Agent Dispatcher) ---
       yield { type: 'status' as const, data: { agent: 'Multi-Agent', message: '正在并行执行各路 Agent...' } };
       this.logger.info(`${logPrefix} Dispatching agents: ${agentsToCall.join(', ')}`);
-      const facts = await this.dispatchAgents(aiProvider, agentsToCall, input, fullPrompt, keywords, logPrefix);
+      const facts = await this.dispatchAgents(aiProvider, agentsToCall, input, fullPrompt, keywords, logPrefix, urls, ru);
       this.logger.info(`${logPrefix} Agents execution completed. Facts gathered (length: ${facts.length})`);
 
       // --- 3. 最终响应生成 (Identity Shaper) ---
@@ -92,7 +95,7 @@ export class Hex2077Tool extends BaseTool {
     }
   }
 
-  private async strategize(aiProvider: AIProvider, fullPrompt: AIMessage[], logPrefix: string): Promise<{ typeCode: string, strategyTag: string, agentsToCall: string[], keywords: string[] }> {
+  private async strategize(aiProvider: AIProvider, fullPrompt: AIMessage[], logPrefix: string): Promise<{ typeCode: string, strategyTag: string, agentsToCall: string[], keywords: string[], urls: string[] }> {
     const builtinTools = [{ google_search: {} }, { url_context: {} }];
     // 结合 orchestrator 与 strategy 进行决策
     const strategyPrompt = `${orchestrator}\n\n${strategy}\n\n请严格基于上述逻辑输出。`;
@@ -100,7 +103,7 @@ export class Hex2077Tool extends BaseTool {
     const strategyRes = await aiProvider.generateContent(fullPrompt, builtinTools, strategyPrompt);
     
     // 匹配 [Strategy: 类型X]
-    const strategyMatch = strategyRes.content?.match(/\[Strategy: 类型\s*([A-F])\s*\]/);
+    const strategyMatch = strategyRes.content?.match(/\[Strategy: 类型\s*([A-G])\s*\]/);
     const typeCode = strategyMatch ? strategyMatch[1] : 'E';
     
     // 匹配 [Call: Agent1, Agent2...]
@@ -112,19 +115,34 @@ export class Hex2077Tool extends BaseTool {
     const keywords = keywordMatch && keywordMatch[1] !== 'None' 
       ? keywordMatch[1].split(',').map(k => k.trim()) 
       : [];
+
+    // 提取所有 URL (或显式的 ru 参数/链接)
+    const userInput = fullPrompt[fullPrompt.length - 1]?.content || '';
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const matchedUrls = userInput.match(urlRegex) || [];
+    
+    // 特殊处理 ru 参数，例如：ru=https://xxx.com
+    const ruMatches = Array.from(userInput.matchAll(/ru=([^\s&]+)/g), m => m[1]);
+    
+    // 合并并去重
+    const allUrls = Array.from(new Set([...matchedUrls, ...ruMatches]));
     
     return { 
       typeCode, 
       strategyTag: `[Strategy: 类型${typeCode}]`,
       agentsToCall,
-      keywords
+      keywords,
+      urls: allUrls
     };
   }
 
-  private async dispatchAgents(aiProvider: AIProvider, agents: string[], input: string, fullPrompt: AIMessage[], keywords: string[], logPrefix: string): Promise<string> {
+  private async dispatchAgents(aiProvider: AIProvider, agents: string[], input: string, fullPrompt: AIMessage[], keywords: string[], logPrefix: string, urls: string[], ru?: string): Promise<string> {
     const tasks: Promise<string>[] = [];
 
     // 动态映射并加入任务队列
+    if (agents.includes('PageSummarizer') && urls.length > 0) {
+      tasks.push(this.callPageSummarizer(aiProvider, urls, input, ru, logPrefix));
+    }
     if (agents.includes('KnowledgeExpert')) {
       tasks.push(this.callKnowledgeExpert(aiProvider, input, fullPrompt, keywords, logPrefix));
     }
@@ -148,12 +166,46 @@ export class Hex2077Tool extends BaseTool {
     // 聚合各路事实数据
     let combinedFacts = '';
     let resultIdx = 0;
+    if (agents.includes('PageSummarizer') && urls) combinedFacts += `【页面内容总结】\n${results[resultIdx++]}\n\n`;
     if (agents.includes('KnowledgeExpert')) combinedFacts += `【用户知识库】\n${results[resultIdx++]}\n\n`;
     if (agents.includes('ProjectArchivist')) combinedFacts += `【个人项目履历】\n${results[resultIdx++]}\n\n`;
     if (agents.includes('AIInsightAgent')) combinedFacts += `【AI行业见解】\n${results[resultIdx++]}\n\n`;
     if (agents.includes('BusinessConsultant')) combinedFacts += `【商务合作建议】\n${results[resultIdx++]}\n`;
 
     return combinedFacts.trim() || 'No relevant facts found.';
+  }
+
+  // --- Sub-Agents 实操逻辑 ---
+
+  private async callPageSummarizer(aiProvider: AIProvider, urls: string[], input: string, ru: string | undefined, logPrefix: string): Promise<string> {
+    let finalUrls = [...urls];
+
+    // 逻辑调整：当 [Current Page] 或 ru 参数与其他链接同时存在时，优先处理其他链接
+    if (finalUrls.length > 1) {
+      const currentPageMatch = input.match(/Current Page:\s*(https?:\/\/[^\s]+)/);
+      const currentPageUrl = currentPageMatch ? currentPageMatch[1] : null;
+
+      const currentContextUrls = new Set<string>();
+      if (ru) currentContextUrls.add(ru);
+      if (currentPageUrl) currentContextUrls.add(currentPageUrl);
+
+      if (currentContextUrls.size > 0) {
+        const otherUrls = finalUrls.filter(u => !currentContextUrls.has(u));
+        // 只有当剩下还有其他链接时，才执行剔除逻辑
+        if (otherUrls.length > 0) {
+          finalUrls = otherUrls;
+          this.logger.info(`${logPrefix} [PageSummarizer] Multiple links detected. Filtering out current page context links: ${Array.from(currentContextUrls).join(', ')}`);
+        }
+      }
+    }
+
+    const urlString = finalUrls.join(" ; ");
+    const builtinTools = [{ google_search: {} }, { url_context: {} }];
+    this.logger.info(`${logPrefix} [PageSummarizer] Summarizing URL: ${urlString}`);
+    // 利用 aiProvider 的 url_context 能力，如果模型支持则会自动解析该链接
+    const res = await aiProvider.generateContent([{ role: 'user', content: `请总结所有链接内容：${urlString}` }], builtinTools, summary);
+    this.logger.info(`${logPrefix} [PageSummarizer] Summary completed.`);
+    return res.content;
   }
 
   // --- Sub-Agents 实操逻辑 ---

@@ -34,9 +34,17 @@ export const strategy = `
 - **特征**：涉及“想跟你合作”、“有没有档期”、“能加个好友吗”。
 - **后续**：系统将侧重项目展示、核心专长展示和合作导引。
 
+**[G 类]：网页内容总结 / 链接抓取 / 文章导读**
+- **包含**：用户直接提供 URL（http/https），或针对上下文中的链接要求总结、提取干货、分析或对比内容。
+- **特征**：文本中包含链接字符串，或出现“总结”、“分析”、“看下这个”、“讲了什么”、“概括”、“提取”等指向网页内容的动词。
+- **后续**：系统将调用 PageSummarizer 抓取网页并提供精炼总结。
+
 ### 判定准则：
-1. **多重意图判定**：包含“合作意图”的优先判定为 F 类；询问“个人背景/项目”且无明确合作意图的判定为 A 类。
-2. **上下文敏感**：考虑对话历史，识别指代关系（如“那个项目”）。
+1. **指令驱动判定**：仅当包含有效链接且**明确要求**进行“总结、提取、翻译、概括、分析网页”等内容处理操作时，判定为 G 类。
+2. **链接背景化处理**：若用户提供链接是作为讨论背景（如“看下这个项目的实现 [URL]”、“这个模型实测如何 [URL]”），应根据其核心诉求（技术、评测、合作等）判定为 A、B 或 F 类，而非 G 类。
+3. **缺省意图逻辑**：若用户仅输入 URL 而无任何伴随文字，默认判定为 G 类（寻求内容摘要）。
+4. **多重意图判定**：包含“合作意图”的优先判定为 F 类；询问“个人背景/项目”且无明确合作意图的判定为 A 类。
+5. **上下文敏感**：考虑对话历史，识别指代关系（如“那个项目”）。
 3. **输出格式**：必须严格遵循以下格式输出：
     "[Strategy: 类型X] [Call: Agent1, Agent2...] [Keywords: 词1, 词2...]"
     
@@ -46,6 +54,7 @@ export const strategy = `
 - **AIInsightAgent**: 提供 AI 行业深度见解、技术逻辑与最新动态。
 - **BusinessConsultant**: 处理商务合作、资源对接与导引。
 - **PersonaChat**: 快速处理日常闲聊与情感反馈。
+- **PageSummarizer**: 抓取并总结网页/链接内容。
 
 ### 关于 Keywords (关键)：
 - 仅当 [Call: ...] 中包含 KnowledgeExpert 时，必须在 [Keywords: ...] 中提供 2-3 个核心搜索词。
@@ -53,12 +62,14 @@ export const strategy = `
 
 
 ### 调度建议：
-- A类: KnowledgeExpert, ProjectArchivist
-- B类: AIInsightAgent, KnowledgeExpert
+- A类: KnowledgeExpert, ProjectArchivist (如含链接则增加 PageSummarizer)
+- B类: AIInsightAgent, KnowledgeExpert (如含链接则增加 PageSummarizer)
 - C类: AIInsightAgent
 - D类: KnowledgeExpert, AIInsightAgent
 - E类: PersonaChat
-- F类: BusinessConsultant, ProjectArchivist
+- F类: BusinessConsultant, ProjectArchivist (如含链接则增加 PageSummarizer)
+- G类: PageSummarizer
+- **重要**：当 A、B、F 类请求中包含 URL 链接时，必须在 [Call: ...] 中包含 PageSummarizer 以获取上下文。
 - 根据实际问题灵活组合，不限于上述建议。
 
 `;

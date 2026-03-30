@@ -107,6 +107,19 @@ textarea::placeholder, input::placeholder {
     color: var(--primary-color);
     text-decoration: underline;
     font-weight: bold;
+    transition: color 0.2s, opacity 0.2s;
+}
+
+/* 修复用户消息中链接不可见的问题 */
+.user-message .markdown-body a {
+    color: var(--user-text);
+    opacity: 0.9;
+    text-decoration: underline;
+}
+
+.user-message .markdown-body a:hover {
+    opacity: 1;
+    filter: brightness(1.2);
 }
 
 .markdown-body p { margin-bottom: 0.75rem; }

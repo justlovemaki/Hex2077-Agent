@@ -1,5 +1,5 @@
-# 使用 Node.js 22 镜像
-FROM node:22-slim
+# 使用 Node.js 20 镜像
+FROM node:20-slim
 
 # 设置工作目录
 WORKDIR /app
