@@ -7,7 +7,7 @@ import { strategy } from '../prompts/strategy.js';
 import { cooperation } from '../prompts/cooperation.js';
 import { antiHallucination } from '../prompts/antiHallucination.js';
 import { orchestrator } from '../prompts/orchestrator.js'; // 引入调度器 prompt
-import { summary } from '../prompts/summary.js'; // 引入总结提示词
+import { summary, chatSummary } from '../prompts/summary.js'; // 引入总结提示词
 import { AIHelper } from '../utils/AIHelper.js';
 
 export class Hex2077Tool extends BaseTool {
@@ -103,7 +103,7 @@ export class Hex2077Tool extends BaseTool {
     const strategyRes = await aiProvider.generateContent(fullPrompt, builtinTools, strategyPrompt);
     
     // 匹配 [Strategy: 类型X]
-    const strategyMatch = strategyRes.content?.match(/\[Strategy: 类型\s*([A-G])\s*\]/);
+    const strategyMatch = strategyRes.content?.match(/\[Strategy: 类型\s*([A-I])\s*\]/);
     const typeCode = strategyMatch ? strategyMatch[1] : 'E';
     
     // 匹配 [Call: Agent1, Agent2...]
@@ -155,6 +155,9 @@ export class Hex2077Tool extends BaseTool {
     if (agents.includes('BusinessConsultant')) {
       tasks.push(this.callBusinessConsultant(aiProvider, input, fullPrompt, logPrefix));
     }
+    if (agents.includes('ChatSummarizer')) {
+      tasks.push(this.callChatSummarizer(aiProvider, fullPrompt, logPrefix));
+    }
 
     // 处理 PersonaChat 这种简单的直接通过最终 Identity Shaper 处理或提供上下文
     if (agents.includes('PersonaChat') && tasks.length === 0) {
@@ -170,7 +173,8 @@ export class Hex2077Tool extends BaseTool {
     if (agents.includes('KnowledgeExpert')) combinedFacts += `【用户知识库】\n${results[resultIdx++]}\n\n`;
     if (agents.includes('ProjectArchivist')) combinedFacts += `【个人项目履历】\n${results[resultIdx++]}\n\n`;
     if (agents.includes('AIInsightAgent')) combinedFacts += `【AI行业见解】\n${results[resultIdx++]}\n\n`;
-    if (agents.includes('BusinessConsultant')) combinedFacts += `【商务合作建议】\n${results[resultIdx++]}\n`;
+    if (agents.includes('BusinessConsultant')) combinedFacts += `【商务合作建议】\n${results[resultIdx++]}\n\n`;
+    if (agents.includes('ChatSummarizer')) combinedFacts += `【对话复盘与总结】\n${results[resultIdx++]}\n\n`;
 
     return combinedFacts.trim() || 'No relevant facts found.';
   }
@@ -251,6 +255,15 @@ export class Hex2077Tool extends BaseTool {
     const bizPrompt = `${cooperation}\n\n任务：分析合作潜力。\n要求：仅输出 1 条关键对接思路，不要寒暄。`;
     const res = await aiProvider.generateContent(fullPrompt, [], bizPrompt);
     this.logger.info(`${logPrefix} [BusinessConsultant] Analysis completed.`);
+    return res.content;
+  }
+
+  private async callChatSummarizer(aiProvider: AIProvider, fullPrompt: AIMessage[], logPrefix: string): Promise<string> {
+    this.logger.info(`${logPrefix} [ChatSummarizer] Summarizing dialogue history...`);
+    // 排除当前最后一条用户输入，仅总结之前的历史（或包含当前输入以梳理现状）
+    // 这里选择包含完整 prompt 以便总结当前的“共识”
+    const res = await aiProvider.generateContent(fullPrompt, [], chatSummary);
+    this.logger.info(`${logPrefix} [ChatSummarizer] Dialogue summary completed.`);
     return res.content;
   }
 
