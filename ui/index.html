@@ -54,11 +54,11 @@
                     <div className="flex flex-col gap-1.5">
                         <div className="flex items-center gap-2">
                             <div className="w-1.5 h-1.5 bg-[var(--primary-color)] rounded-full animate-pulse shadow-[0_0_8px_var(--primary-glow)]"></div>
-                            <span className="text-[10px] md:text-xs mono font-bold text-[var(--primary-color)] uppercase tracking-wider">
+                            <span className="text-[9px] md:text-[11px] mono font-bold text-[var(--primary-color)] uppercase tracking-wider">
                                 {status.agent || 'Executing Agent'}
                             </span>
                         </div>
-                        <div className="text-[10px] md:text-xs text-[var(--text-dim)] italic ml-3.5 animate__animated animate__pulse animate__infinite">
+                        <div className="text-[9px] md:text-[11px] text-[var(--text-dim)] italic ml-3.5 animate__animated animate__pulse animate__infinite">
                             {status.message || 'Processing...'}
                         </div>
                     </div>
@@ -70,7 +70,7 @@
         const MessageItem = ({ msg }) => (
             <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate__animated animate__fadeInUp animate__faster`}>
                 <div className={`message-bubble p-3 md:p-4 ${msg.role === 'user' ? 'user-message' : 'ai-message shadow-lg'}`}>
-                    <div className="text-xs md:text-sm leading-relaxed">
+                    <div className="text-[11px] md:text-xs leading-relaxed">
                         <Markdown content={msg.content} />
                     </div>
                 </div>
@@ -98,7 +98,7 @@
                         onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSend(); } }}
                         placeholder={placeholder}
                         maxLength={500}
-                        className="flex-1 bg-[var(--bg-color)] text-[var(--text-main)] border border-[var(--border-color)] rounded-lg md:rounded-xl p-2 md:p-3 text-xs md:text-sm focus:outline-none focus:border-[var(--primary-color)] transition-colors resize-none h-9 md:h-12"
+                        className="flex-1 bg-[var(--bg-color)] text-[var(--text-main)] border border-[var(--border-color)] rounded-lg md:rounded-xl p-2 md:p-3 text-[11px] md:text-xs focus:outline-none focus:border-[var(--primary-color)] transition-colors resize-none h-9 md:h-12"
                     />
                     <button onClick={onSend} disabled={loading} className="w-9 h-9 md:w-12 md:h-12 primary-btn rounded-lg md:rounded-xl flex items-center justify-center transition-all cyber-border shrink-0">
                         <svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>

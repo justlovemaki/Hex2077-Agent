@@ -137,6 +137,10 @@ textarea::placeholder, input::placeholder {
     border-radius: 12px 12px 12px 2px;
 }
 
+.message-bubble .markdown-body > *:last-child {
+    margin-bottom: 0;
+}
+
 .theme-dark .ai-message {
     border: 1px solid rgba(255, 153, 0, 0.1);
 }
@@ -144,7 +148,7 @@ textarea::placeholder, input::placeholder {
 /* Markdown 渲染深度美化 */
 .markdown-body {
     line-height: 1.7;
-    font-size: 14px;
+    font-size: inherit; /* 允许通过父级类控制字号 */
     color: var(--text-main);
     overflow-wrap: break-word;
     word-break: break-word;
