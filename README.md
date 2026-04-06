@@ -1,37 +1,49 @@
-# Hex2077-Agent: 数字化人格分身
-> **不仅仅是对话，更是逻辑与灵魂的数字化延伸。**
-
-Hex2077-Agent 是一款基于 **6-Agent 深度协作** 的数字化人格插件。本项目深度参考并致敬 [罗磊的 AI 分身实践](https://luolei.org/luolei-ai)，致力于通过硬核逻辑与私有知识库，为用户提供高价值、人格化的交流体验。
+# Hex2077-Agent: 三位一体的数字化人格系统
+> **灵魂 (人格)、大脑 (知识)、躯体 (渠道) 的深度融合。**
 
 ---
 
-## 核心价值 (Value)
+Hex2077-Agent 不仅仅是一个 AI 分身，它是一个**具备持续进化能力的数字化分身**。它通过将独特的“人格逻辑”、自动生成的“百科知识库”与“多端通讯渠道”深度结合，实现了从“简单对话”到“数字生命”的跃迁。
 
-- **极致效率**：结论先行，剔除所有 AI 套话与客套。
-- **人格一致**：6 个 Agent 实时协作：
-  - **Orchestrator (总协调器)**：确保逻辑与表达习惯的高度匹配。
-  - **Strategy (策略师)**：根据意图分类调整回答深度。
-  - **Knowledge Expert (知识专家)**：深度检索私有知识库。
-  - **Project Archivist (项目档案馆)**：管理真实项目履历与技术细节。
-  - **Persona Keeper (人格守护)**：移除 AI 味，注入 ISTJ 严谨人格。
-  - **Style Enforcer (风格执行)**：重塑冷峻、极简、逻辑连贯的语感。
-- **知识共鸣**：支持 PDF、MD、DOCX 格式，通过语义索引实现分身即时记忆。
-- **沉浸美学**：针对 300x600 侧边栏优化，支持深浅色模式切换、Markdown 代码高亮。
+## 核心架构：三位一体 (The Trinity)
 
-## 痛点解决 (Problem Solved)
+### 1. 灵魂 (The Soul): 6-Agent 数字化人格
+深度参考并致敬 [罗磊的 AI 分身实践](https://luolei.org/luolei-ai)，通过 **6-Agent 深度协作架构**，Hex2077 拥有严谨且连贯的 ISTJ 型逻辑人格：
+- **逻辑一致性**：由 Orchestrator 与 Style Enforcer 共同确保每一句回答都符合设定的语感与逻辑。
+- **角色化专家**：Strategy 调整深度，Knowledge Expert 检索知识，Project Archivist 管理履历，Persona Keeper 守护灵魂。
+- **结果导向**：剔除客套，直击核心，像真实的资深工程师一样思考和表达。
 
-- **反同质化**：拒绝千篇一律，打造具备独特逻辑习惯的数字分身。
-- **反冗长**：工程师视角，只说干货，不解释显而易见的技术背景。
-- **反割裂**：将碎片化的项目履历与技术沉淀转化为动态的、可交互的智慧体。
+### 2. 大脑 (The Brain): LLM Wiki 知识复利
+不同于传统的 RAG 检索，Hex2077 拥有一个**会自我生长的百科全书**。它深度实践了 Karpathy 的 [LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) 构想：
+- **知识合成 (Synthesis)**：自动将零散文档转化为互联的实体 (Entities) 与概念 (Concepts) 页面。
+- **复利增长 (Compounding)**：新知识与旧知识**智能合并**。每次摄取都是一次“认知升级”，而不是简单的信息堆积。
+- **可视化大脑**：生成的 Wiki 支持 **Obsidian** 挂载。你可以亲眼看到分身的知识图谱如何随时间变得愈发致密。
 
-## 快速启航 (Quick Start)
+### 3. 躯体 (The Body): 全渠道多端连接
+你的分身应在任何你出现的地方：
+- **IM 全覆盖**：集成 OpenClaw China，支持微信（个人号/公众号）、飞书、钉钉、企业微信、QQ。
+- **无缝交互**：无论你在 Web 端上传 PDF，还是在飞书群里提问，分身都共用同一个“大脑”和“灵魂”。
+- **标准协议**：提供兼容 OpenAI 的标准接口，让分身可以作为后端驱动任意第三方 AI 客户端。
 
-### 1. 配置
-复制 `.env.example` 为 `.env`，填写 `AI_API_KEY`。
+---
 
-### 2. 运行
+## 进化工作流 (The Evolution Workflow)
+
+1.  **输入 (Input)**：将原始素材 (PDF/MD/DOCX) 通过 Web 上传。
+2.  **摄取 (Ingest)**：程序自动解析并提取核心摘要。
+3.  **合成 (Synthesize)**：LLM 识别并更新对应的 Wiki 百科页面，完成知识的“无损融合”。
+4.  **分发 (Distribute)**：更新后的知识立即同步到微信、飞书、网页等所有连接渠道。
+
+---
+
+## 快速部署 (Quick Start)
+
+### 1. 准备环境
+复制 `.env.example` 为 `.env`，配置 `AI_API_KEY`。
+
+### 2. 一键拉起
 ```bash
-# Docker 一键拉起
+# 推荐 Docker 部署
 docker-compose up -d
 
 # 本地启动
@@ -39,85 +51,32 @@ npm install && npm run start
 ```
 访问：`http://localhost:3000`
 
-### 3. 进化
-访问 `/knowledge` (默认密码 `admin123`)，上传文档即可完成分身进化。
+### 3. 开始进化
+进入 `/knowledge` (默认密码 `admin123`)，上传文档。你的分身会立即开始阅读、思考并更新自己的百科全书。
 
-## 定制个人分身 (Customization)
-
-若要将分身修改为您自己的形象，请重点调整 `src/prompts/` 目录下的核心文件：
-
-- **`persona.ts`**: 定义您的核心性格、职业背景与价值观（分身的灵魂）。
-- **`style.ts`**: 调整语感、表达习惯、回答长度与 Emoji 使用偏好。
-- **`projects.ts`**: 更新您的真实项目履历、学历与过往成就。
-- **`cooperation.ts`**: 定制您的商务对接逻辑与合作导引方式。
-- **`knowledge.ts`**: 设定分身在调用知识库时的行为准则。
-- **UI 视觉**: 替换 `ui/logo.jpg` 并调整 `ui/index.html` 中的页面标题。
-
-## 系统对接 (Integration)
-
-Hex2077-Agent 采用响应式设计，特别针对侧边栏场景进行了优化。
-
-### 1. Iframe 接入
-您可以直接在其他系统中通过 `iframe` 嵌入分身界面：
-
-```html
-<iframe 
-  src="http://your-domain.com/?theme=dark" 
-  width="300" 
-  height="600" 
-  style="border: none; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);"
-></iframe>
+### 4. 人格重塑 (Persona Reconstruction)
+如果你想彻底改变分身的人格设定（例如从“严谨工程师”变为“活泼少女”），可以使用一键重构功能：
+```bash
+npm run reconstruct
 ```
-
-### 2. 参数支持
-- **`theme`**: 控制初始主题。可选值：`dark` (默认), `light`。
-- **持久化**: 界面会自动基于浏览器指纹（Fingerprint）保存对话记录，确保用户在刷新或重新进入时对话不丢失。
+按提示输入新的人格描述，系统会自动重构包括核心人格、回复风格、调度策略、项目档案在内的 11 个提示词模块。重构后的配置存储在 `data/*.txt` 中，实时生效。
 
 ---
 
-## 多平台接入 (Multi-platform Connectivity)
+## 数据目录规范 (Data Standards)
 
-Hex2077-Agent 集成了 [OpenClaw China](https://github.com/BytePioneer-AI/openclaw-china) 适配层，支持将分身无缝接入主流即时通讯 (IM) 工具。
-
-### 1. 支持渠道
-目前已原生支持以下平台：
-- **微信 (WeChat)**: 个人微信 (基于 [wechatbot](https://github.com/corespeed-io/wechatbot))、公众号 (订阅号/服务号)。
-- **企业微信 (WeCom)**: 企业微信自建应用、内部群机器人、微信客服。
-- **飞书 (Feishu)**: 飞书自建应用、群机器人 (支持 WebSocket/Webhook)。
-- **钉钉 (DingTalk)**: 钉钉自建应用、群机器人 (支持 Stream 模式)。
-- **QQ**: QQ 机器人。
-
-### 2. 启用方法
-在 `.env` 中配置对应的 `ENABLED` 变量为 `true` 并填写必要凭据即可开启：
-
-```env
-# 开启适配层总开关
-OPENCLAW_ENABLED=true
-
-# 示例：启用微信个人号
-WECHAT_APP_ENABLED=true
-
-# 示例：启用飞书
-FEISHU_ENABLED=true
-FEISHU_APP_ID=cli_xxxx
-FEISHU_APP_SECRET=your_secret
-```
-
-### 3. 扫码登录 (个人微信)
-当开启 `WECHAT_APP` 渠道后，启动程序会在控制台输出登录二维码 URL，使用微信扫码即可完成授权。系统会自动通过文件持久化 Session，下次启动通常无需重复扫码。
+- `data/raw/`：**原始记录**。不可变的源头文件。
+- `data/knowledge_store/`：**进化后的 Wiki**。
+  - `entities/` & `concepts/`：自动合成的百科页面。
+  - `summaries/`：文档摘要。
+  - `index.md` & `log.md`：知识地图与进化日志。
 
 ---
 
-## 免责声明 (Disclaimer)
+## 开源与免责 (License & Disclaimer)
 
-- 本项目仅供学习和研究使用，不保证在任何情况下都能正常运行。
-- 用户在使用本项目时需自行承担风险，作者不对任何因使用本项目导致的直接或间接损失（包括但不限于数据丢失、账号封禁、法律责任等）负责。
-- 本项目不包含任何形式的保证（明示或暗示）。
-
-## 开源协议 (License)
-
-本项目采用 [GNU General Public License v3.0 (GPL-3.0)](LICENSE) 协议。
+本项目采用 [GPL-3.0](LICENSE) 协议。请在遵守当地法律法规的前提下使用，开发者不对任何因分身言论或数据处理导致的损失负责。
 
 ---
 
-> **“相信 AI 的力量，更相信人的创造力。”**
+> **“让知识在对话中复利，让灵魂在数字中永生。”**

@@ -8,6 +8,7 @@ import { SimpleKnowledgeBaseService } from './services/KnowledgeBaseService.js';
 import { DocumentProcessor } from './services/DocumentProcessor.js';
 import { OpenAIProvider } from './providers/OpenAIProvider.js';
 import { MemoryHistoryService } from './services/HistoryService.js';
+import { PersonaService } from './services/PersonaService.js';
 import chatRoutes from './api/chat.js';
 import knowledgeRoutes from './api/knowledge.js';
 import adminRoutes from './api/admin.js';
@@ -54,7 +55,7 @@ const rateLimitWindow = Number(process.env.RATE_LIMIT_WINDOW_MS) || 60 * 1000;
 FingerprintRateLimiter.init({
   windowMs: rateLimitWindow,
   maxRequests: rateLimitMax,
-  excludePaths: ['/static', '/favicon.ico', '/assets'],
+  excludePaths: ['/static', '/favicon.ico', '/assets', '/api/knowledge', '/api/wiki', '/api/admin', '/knowledge'],
 });
 
 // Add Rate Limit Hook
@@ -81,17 +82,19 @@ const aiProvider = new OpenAIProvider(apiKey, baseURL, model);
 const kbService = new SimpleKnowledgeBaseService(dataPath, aiProvider, fastify.log);
 const historyService = new MemoryHistoryService(maxHistoryRounds);
 const docProcessor = new DocumentProcessor();
+const personaService = new PersonaService(aiProvider, dataPath);
 
 // Register Routes
 fastify.register(chatRoutes, { 
   prefix: '/api', 
   kbService,
   historyService,
+  personaService,
   maxInputLength,
   maxHistoryRounds
 });
 fastify.register(knowledgeRoutes, { prefix: '/api', kbService, docProcessor });
-fastify.register(adminRoutes, { prefix: '/api' });
+fastify.register(adminRoutes, { prefix: '/api', personaService });
 
 // Static Files
 fastify.register(fastifyStatic, {

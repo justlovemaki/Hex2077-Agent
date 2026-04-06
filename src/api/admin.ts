@@ -7,7 +7,8 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-export default async function adminRoutes(fastify: FastifyInstance) {
+export default async function adminRoutes(fastify: FastifyInstance, options: { personaService?: any }) {
+  const { personaService } = options;
   const SECRET = process.env.JWT_SECRET || process.env.KB_PASSWORD || 'hex2077-secret-key';
 
   const checkAuth = async (request: any, reply: any) => {
@@ -40,6 +41,24 @@ export default async function adminRoutes(fastify: FastifyInstance) {
       return { success: true, message: 'Configuration reloaded successfully' };
     } catch (err: any) {
       fastify.log.error({ error: err.message }, 'Failed to reload environment variables');
+      reply.status(500).send({ success: false, error: err.message });
+    }
+  });
+
+  fastify.post('/admin/reconstruct-persona', { preHandler: checkAuth }, async (request, reply) => {
+    const { description } = request.body as { description: string };
+    if (!description) {
+      return reply.status(400).send({ error: 'Missing description' });
+    }
+
+    try {
+      if (!personaService) {
+        throw new Error('PersonaService not initialized');
+      }
+      const result = await personaService.reconstruct(description);
+      return { success: true, ...result };
+    } catch (err: any) {
+      fastify.log.error({ error: err.message }, 'Failed to reconstruct persona');
       reply.status(500).send({ success: false, error: err.message });
     }
   });

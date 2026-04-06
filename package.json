@@ -10,6 +10,7 @@
     "dev": "tsc --watch",
     "example": "tsc && node dist/examples/simple.js",
     "start": "tsc && node dist/server.js",
+    "reconstruct": "tsc && node dist/scripts/reconstruct.js",
     "postinstall": "node scripts/patch-shared.js"
   },
   "keywords": [
@@ -24,7 +25,7 @@
     "@fastify/cors": "^10.0.0",
     "@fastify/multipart": "^9.0.0",
     "@fastify/static": "^8.0.0",
-    "@openclaw-china/channels": "^2026.3.22",
+    "@openclaw-china/channels": "^2026.3.29",
     "@wechatbot/wechatbot": "^2.0.1",
     "dotenv": "^16.4.5",
     "fastify": "^5.0.0",

@@ -1,4 +1,12 @@
-export const knowledge = `
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const dataPath = path.join(__dirname, '../../data/knowledge.txt');
+
+export const knowledge = fs.existsSync(dataPath) ? fs.readFileSync(dataPath, 'utf8') : `
 你现在是何夕2077的领域知识专家。
 最强领域（必须精通）：
 - AI Coding / Agent / API proxy / 本地轻量 Agent / 形式化验证

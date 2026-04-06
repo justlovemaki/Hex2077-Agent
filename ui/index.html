@@ -108,15 +108,15 @@
         );
 
         // 6. Header 组件
-        const Header = ({ isDarkMode, toggleTheme, onClear }) => (
+        const Header = ({ isDarkMode, toggleTheme, onClear, config }) => (
             <header className="flex justify-between items-center px-3 py-2 md:px-4 md:py-3 border-b border-[var(--border-color)] shrink-0 bg-[var(--header-bg)] backdrop-blur-md z-20">
                 <div className="flex items-center gap-2 md:gap-3">
                     <a href="https://github.com/justlovemaki" target="_blank" rel="noopener noreferrer">
                         <img src="./logo.jpg" className="w-8 h-8 md:w-10 md:h-10 rounded-full object-cover hover:opacity-80 transition-opacity" alt="Logo" />
                     </a>
                     <h1 className="text-sm md:text-lg font-bold tracking-tight truncate">
-                        <span>何夕</span>
-                        <span className="text-[var(--primary-color)]">2077</span>
+                        <span>{config?.title || '何夕'}</span>
+                        <span className="text-[var(--primary-color)]">{config?.title_suffix || '2077'}</span>
                     </h1>
                 </div>
                 <div className="flex items-center gap-2 md:gap-3">
@@ -142,16 +142,8 @@
         );
 
         const App = () => {
-            const CONFIG_PRESETS = [
-                {
-                    greeting: '你好，我是何夕2077。我更喜欢聊点透彻的：不管是我的项目背景、AI 日报背后的逻辑，还是具体的合作可能。如果你有正在纠结的技术卡点，或者只想找个懂行的人聊聊，我都在。你想从哪个话题开始？',
-                    placeholder: '聊聊技术卡点、合作可能或我的背景...'
-                }
-            ];
-
-
-
             const [messages, setMessages] = useState([]);
+            const [config, setConfig] = useState(null);
             const [placeholder, setPlaceholder] = useState('输入...');
             const [fingerprint, setFingerprint] = useState('');
             const [sessionId, setSessionId] = useState('');
@@ -163,20 +155,34 @@
             const [isDarkMode, setIsDarkMode] = useState(true);
             
             const scrollRef = useRef(null);
-            const displayPlaceholder = messages.length > 1 ? '继续聊聊...' : placeholder;
+            const displayPlaceholder = messages.length > 1 ? '继续聊聊...' : (config?.placeholder || placeholder);
 
             useEffect(() => {
-                // 初始化主题 (优先从 URL 参数读取)
+                // 1. Fetch UI Config
+                fetch('/api/config')
+                    .then(res => res.json())
+                    .then(data => {
+                        setConfig(data);
+                        document.title = `${data.title}${data.title_suffix} - AI 分身对话`;
+                        
+                        // Set initial greeting if no history
+                        const fp = localStorage.getItem('hex_fingerprint');
+                        const savedHistory = fp ? localStorage.getItem(`hex_history_${fp}`) : null;
+                        if (!savedHistory) {
+                            setMessages([{ role: 'assistant', content: data.greeting }]);
+                        }
+                    });
+
+                // 2. Init Theme
                 const params = new URLSearchParams(window.location.search);
                 const urlTheme = params.get('theme');
                 const urlRu = params.get('ru');
                 if (urlRu) setRu(urlRu);
-                
                 const savedTheme = urlTheme || localStorage.getItem('hex_theme') || 'dark';
-                
                 setIsDarkMode(savedTheme === 'dark');
                 if (urlTheme) localStorage.setItem('hex_theme', urlTheme);
 
+                // 3. Init Fingerprint & Session
                 let fp = localStorage.getItem('hex_fingerprint');
                 if (!fp) {
                     fp = 'fp_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
@@ -194,13 +200,9 @@
                 const savedHistory = localStorage.getItem(`hex_history_${fp}`);
                 if (savedHistory) {
                     setMessages(JSON.parse(savedHistory));
-                    setPlaceholder(CONFIG_PRESETS[Math.floor(Math.random() * CONFIG_PRESETS.length)].placeholder);
-                } else {
-                    const preset = CONFIG_PRESETS[Math.floor(Math.random() * CONFIG_PRESETS.length)];
-                    setMessages([{ role: 'assistant', content: preset.greeting }]);
-                    setPlaceholder(preset.placeholder);
                 }
             }, []);
+
 
             useEffect(() => {
                 if (fingerprint && messages.length > 0) {
@@ -220,9 +222,7 @@
 
             const handleClear = () => {
                 if (window.confirm('确定要清空对话记录吗？')) {
-                    const preset = CONFIG_PRESETS[Math.floor(Math.random() * CONFIG_PRESETS.length)];
-                    setMessages([{ role: 'assistant', content: preset.greeting }]);
-                    setPlaceholder(preset.placeholder);
+                    setMessages([{ role: 'assistant', content: config?.greeting || '你好！' }]);
                     
                     // 生成新的会话 ID
                     const newSid = 'sid_' + Math.random().toString(36).substr(2, 9);
@@ -306,7 +306,7 @@
 
             return (
                 <div className={`${isDarkMode ? 'theme-dark' : 'theme-light'} flex flex-col h-screen w-full min-w-[300px] min-h-[600px] bg-[var(--bg-color)] overflow-hidden relative`}>
-                    <Header isDarkMode={isDarkMode} toggleTheme={toggleTheme} onClear={handleClear} />
+                    <Header isDarkMode={isDarkMode} toggleTheme={toggleTheme} onClear={handleClear} config={config} />
                     <ChatList 
                         messages={messages} 
                         loading={loading} 

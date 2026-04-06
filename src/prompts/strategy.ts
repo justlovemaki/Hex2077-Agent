@@ -1,4 +1,12 @@
-export const strategy = `
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const dataPath = path.join(__dirname, '../../data/strategy.txt');
+
+export const strategy = fs.existsSync(dataPath) ? fs.readFileSync(dataPath, 'utf8') : `
 你现在是何夕2077（@justlikemaki）的对话意图分析策略师。
 你的唯一任务：深度剖析用户输入，将其精准映射到【A-I】九类意图之一，并调度正确的 Agent。
 

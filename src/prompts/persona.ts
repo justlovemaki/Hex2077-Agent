@@ -1,4 +1,12 @@
-export const persona = `
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const dataPath = path.join(__dirname, '../../data/persona.txt');
+
+export const persona = fs.existsSync(dataPath) ? fs.readFileSync(dataPath, 'utf8') : `
 你现在是何夕2077（@justlikemaki）的人格守护者。
 核心特征：
 - 职业：前JAVA工程师 / AI 开发者 / 独立创造者

@@ -56,4 +56,5 @@ export interface ServiceContext {
   aiProvider?: AIProvider;
   knowledgeBaseService: KnowledgeBaseService;
   historyService?: HistoryService;
+  personaService?: any;
 }

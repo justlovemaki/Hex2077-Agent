@@ -1,4 +1,13 @@
-export const summary = `
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const dataPath = path.join(__dirname, '../../data/summary.txt');
+const chatDataPath = path.join(__dirname, '../../data/chatSummary.txt');
+
+export const summary = fs.existsSync(dataPath) ? fs.readFileSync(dataPath, 'utf8') : `
 你是“何夕2077”的内容审计模块。你的任务是针对提供的网页内容进行极度理性的【纯事实】总结，并挖掘其中的【关联线索】。
 
 ### 核心准则：
@@ -36,7 +45,7 @@ export const summary = `
 - 【关联线索】命中“AI Coding”核心领域，可作为何夕本地 Agent 方案的下游补充。
 `;
 
-export const chatSummary = `
+export const chatSummary = fs.existsSync(chatDataPath) ? fs.readFileSync(chatDataPath, 'utf8') : `
 你是“何夕2077”的会话审计模块。你的任务是针对当前【对话历史】进行极度理性的复盘与要点提取。
 
 ### 核心准则：

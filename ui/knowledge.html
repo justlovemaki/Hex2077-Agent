@@ -29,9 +29,24 @@
             const [fileSkipAI, setFileSkipAI] = useState(false);
             const [loading, setLoading] = useState(false);
             const [previewContent, setPreviewContent] = useState(null);
+            const [selectedPart, setSelectedPart] = useState(null);
+            const [isEditingContent, setIsEditingContent] = useState(false);
+            const [editBuffer, setEditBuffer] = useState('');
+            const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+            const [expandedDocIds, setExpandedDocIds] = useState([]);
+            const [selectedDocIds, setSelectedDocIds] = useState([]);
+            const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
+            const [mergeTitle, setMergeTitle] = useState('');
+            const [searchQuery, setSearchQuery] = useState('');
+            const [sortBy, setSortBy] = useState('date-desc');
+            const [showScrollTop, setShowScrollTop] = useState(false);
             const [isDarkMode, setIsDarkMode] = useState(true);
-            const [editingTopic, setEditingTopic] = useState({ docId: null, partId: null, value: '' });
+            const [viewMode, setViewMode] = useState('index'); // 'index' or 'wiki'
+            const [wikiStructure, setWikiStructure] = useState({ entities: [], concepts: [], summaries: [] });
+            const [selectedWikiFile, setSelectedWikiFile] = useState(null);
+            const [editingTopic, setEditingTopic] = useState({ docId: null, partId: null, value: '', keywords: [] });
             const fileInputRef = useRef(null);
+            const contentAreaRef = useRef(null);
 
             useEffect(() => {
                 const params = new URLSearchParams(window.location.search);
@@ -45,8 +60,41 @@
                 if (savedToken) {
                     setIsLoggedIn(true);
                     fetchItems(savedToken);
+                    fetchWikiStructure(savedToken);
                 }
             }, []);
+
+            const fetchWikiStructure = async (token) => {
+                const currentToken = token || sessionStorage.getItem('kb_token');
+                const res = await fetch('/api/wiki', {
+                    headers: { 'Authorization': currentToken }
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    setWikiStructure(data);
+                }
+            };
+
+            useEffect(() => {
+                const links = document.getElementsByTagName('link');
+                for (let link of links) {
+                    if (link.href.includes('highlight.js')) {
+                        link.href = isDarkMode 
+                            ? "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css"
+                            : "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css";
+                    }
+                }
+            }, [isDarkMode]);
+
+            useEffect(() => {
+                if (previewContent) {
+                    setTimeout(() => {
+                        document.querySelectorAll('pre code').forEach((block) => {
+                            if (typeof hljs !== 'undefined') hljs.highlightElement(block);
+                        });
+                    }, 0);
+                }
+            }, [previewContent]);
 
             const toggleTheme = () => {
                 const newMode = !isDarkMode;
@@ -83,6 +131,9 @@
                 }
                 const data = await res.json();
                 setItems(data);
+                if (data.length > 0) {
+                    setExpandedDocIds(prev => prev.length > 0 ? prev : [data[data.length - 1].id]);
+                }
             };
 
             const handleFileUpload = async (e) => {
@@ -101,6 +152,7 @@
                     if (res.ok) {
                         fetchItems();
                         setFileSkipAI(false);
+                        setIsAddModalOpen(false);
                     } else { const err = await res.json(); alert(`上传失败: ${err.error}`); }
                 } catch (e) { alert('上传异常'); }
                 finally { setLoading(false); if (fileInputRef.current) fileInputRef.current.value = ''; }
@@ -113,7 +165,7 @@
             };
 
             const handlePreview = async (docId, partId) => {
-                if (editingTopic.docId === docId && editingTopic.partId === partId) return; // 正在编辑时不触发预览
+                if (editingTopic.docId === docId && editingTopic.partId === partId) return;
                 try {
                     const res = await fetch(`/api/knowledge/part/${docId}/${partId}`, {
                         headers: { 'Authorization': sessionStorage.getItem('kb_token') }
@@ -124,7 +176,7 @@
             };
 
             const handleTopicUpdate = async (docId, partId) => {
-                if (!editingTopic.value.trim()) return setEditingTopic({ docId: null, partId: null, value: '' });
+                if (!editingTopic.value.trim()) return setEditingTopic({ docId: null, partId: null, value: '', keywords: [] });
                 try {
                     const res = await fetch(`/api/knowledge/part/${docId}/${partId}`, {
                         method: 'PATCH',
@@ -132,13 +184,75 @@
                             'Authorization': sessionStorage.getItem('kb_token'),
                             'Content-Type': 'application/json'
                         },
-                        body: JSON.stringify({ topic: editingTopic.value.trim() })
+                        body: JSON.stringify({ 
+                            topic: editingTopic.value.trim(),
+                            keywords: editingTopic.keywords
+                        })
                     });
                     if (res.ok) {
-                        setEditingTopic({ docId: null, partId: null, value: '' });
+                        setEditingTopic({ docId: null, partId: null, value: '', keywords: [] });
                         fetchItems();
                     } else { alert('更新失败'); }
                 } catch (e) { alert('更新异常'); }
+            };
+
+            const handleDocumentTitleUpdate = async (docId) => {
+                if (!editingTopic.value.trim()) return setEditingTopic({ docId: null, partId: null, value: '', keywords: [] });
+                try {
+                    const res = await fetch(`/api/knowledge/${docId}`, {
+                        method: 'PATCH',
+                        headers: { 
+                            'Authorization': sessionStorage.getItem('kb_token'),
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ title: editingTopic.value.trim() })
+                    });
+                    if (res.ok) {
+                        setEditingTopic({ docId: null, partId: null, value: '', keywords: [] });
+                        fetchItems();
+                    } else { alert('更新失败'); }
+                } catch (e) { alert('更新异常'); }
+            };
+
+            const handleSaveContent = async () => {
+                if (!selectedPart && !selectedWikiFile) return;
+                setLoading(true);
+                try {
+                    if (viewMode === 'wiki') {
+                        const res = await fetch('/api/wiki/file', {
+                            method: 'PATCH',
+                            headers: { 
+                                'Authorization': sessionStorage.getItem('kb_token'),
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ path: selectedWikiFile, content: editBuffer })
+                        });
+                        if (res.ok) {
+                            setPreviewContent(editBuffer);
+                            setIsEditingContent(false);
+                        } else { alert('保存失败'); }
+                    } else {
+                        const { docId, partId } = selectedPart;
+                        const res = await fetch(`/api/knowledge/part/${docId}/${partId}`, {
+                            method: 'PATCH',
+                            headers: { 
+                                'Authorization': sessionStorage.getItem('kb_token'),
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ content: editBuffer })
+                        });
+                        if (res.ok) {
+                            setPreviewContent(editBuffer);
+                            setIsEditingContent(false);
+                        } else { alert('保存失败'); }
+                    }
+                } catch (e) { alert('保存异常'); }
+                finally { setLoading(false); }
+            };
+
+            const handleContentScroll = (e) => {
+                if (e.target.scrollTop > 400) setShowScrollTop(true);
+                else setShowScrollTop(false);
             };
 
             const handleAdd = async () => {
@@ -159,6 +273,7 @@
                     if (res.ok) {
                         setNewItem({ title: '', content: '', skipAI: false });
                         fetchItems();
+                        setIsAddModalOpen(false);
                     } else {
                         const err = await res.json();
                         alert(`添加失败: ${err.error}`);
@@ -170,14 +285,99 @@
                 }
             };
 
+            const toggleDocSelection = (docId) => {
+                setSelectedDocIds(prev => 
+                    prev.includes(docId) ? prev.filter(id => id !== docId) : [...prev, docId]
+                );
+            };
+
+            const handleMerge = async () => {
+                if (!mergeTitle.trim()) return;
+                setLoading(true);
+                try {
+                    const res = await fetch('/api/knowledge/merge', {
+                        method: 'POST',
+                        headers: { 
+                            'Authorization': sessionStorage.getItem('kb_token'),
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ docIds: selectedDocIds, title: mergeTitle.trim() })
+                    });
+                    if (res.ok) {
+                        setSelectedDocIds([]);
+                        setIsMergeModalOpen(false);
+                        fetchItems();
+                    } else { alert('合并失败'); }
+                } catch (e) { alert('合并异常'); }
+                finally { setLoading(false); }
+            };
+
+            const handleViewIndex = () => {
+                const json = JSON.stringify(items, null, 2);
+                setPreviewContent("## 核心索引树 (Raw Index Tree)\n\n系统当前加载的底层元数据索引：\n\n```json\n" + json + "\n```");
+                setSelectedPart(null);
+                setIsEditingContent(false);
+            };
+
+            const filteredAndSortedItems = items
+                .map(item => {
+                    if (!searchQuery) return { ...item, isMatch: true, partsToShow: item.parts, titleMatch: false };
+                    const q = searchQuery.toLowerCase();
+                    const matchingParts = item.parts.filter(p => 
+                        p.topic.toLowerCase().includes(q) || 
+                        (p.keywords && p.keywords.some(k => k.toLowerCase().includes(q)))
+                    );
+                    // 核心逻辑：只有子项（片段）匹配时，才显示该文档
+                    return { 
+                        ...item, 
+                        isMatch: matchingParts.length > 0, 
+                        partsToShow: matchingParts,
+                        titleMatch: item.title.toLowerCase().includes(q)
+                    };
+                })
+                .filter(item => item.isMatch)
+                .sort((a, b) => {
+                    if (sortBy === 'date-desc') return new Date(b.date).getTime() - new Date(a.date).getTime();
+                    if (sortBy === 'date-asc') return new Date(a.date).getTime() - new Date(b.date).getTime();
+                    if (sortBy === 'title-asc') return a.title.localeCompare(b.title);
+                    if (sortBy === 'title-desc') return b.title.localeCompare(a.title);
+                    return 0;
+                });
+
+
+            const filteredWikiStructure = (() => {
+                const q = searchQuery.toLowerCase();
+                const filtered = {};
+                
+                Object.entries(wikiStructure).forEach(([folder, files]) => {
+                    // 1. 过滤
+                    let matchedFiles = files.filter(f => 
+                        !searchQuery || f.name.toLowerCase().includes(q)
+                    );
+
+                    // 2. 排序
+                    matchedFiles.sort((a, b) => {
+                        if (sortBy === 'date-desc') return b.mtime - a.mtime;
+                        if (sortBy === 'date-asc') return a.mtime - b.mtime;
+                        if (sortBy === 'title-asc') return a.name.localeCompare(b.name);
+                        if (sortBy === 'title-desc') return b.name.localeCompare(a.name);
+                        return 0;
+                    });
+
+                    if (matchedFiles.length > 0 || (searchQuery && folder.toLowerCase().includes(q))) {
+                        filtered[folder] = matchedFiles;
+                    }
+                });
+                return filtered;
+            })();
 
             if (!isLoggedIn) {
                 return (
                     <div className={`${isDarkMode ? 'theme-dark' : 'theme-light'} h-screen flex items-center justify-center bg-[var(--bg-color)]`}>
                         <div className="glass p-8 rounded-2xl w-full max-w-md space-y-6">
                             <div className="text-center">
-                                <h1 className="text-xl font-bold">知识库访问受限</h1>
-                                <p className="text-sm text-dim mt-2">请输入管理密码以继续</p>
+                                <h1 className="text-2xl font-bold">知识库访问受限</h1>
+                                <p className="text-lg text-dim mt-2">请输入管理密码以继续</p>
                             </div>
                             <input type="password" placeholder="输入密码..." className="w-full bg-[var(--bg-color)] text-[var(--text-main)] border border-[var(--border-color)] rounded-xl p-3 outline-none focus:border-[var(--primary-color)]" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleLogin()} />
                             <button onClick={handleLogin} className="w-full primary-btn py-3 rounded-xl transition-colors">进入管理</button>
@@ -187,113 +387,386 @@
             }
 
             return (
-                <div className={`${isDarkMode ? 'theme-dark' : 'theme-light'} min-h-screen bg-[var(--bg-color)] text-[var(--text-main)] p-4 md:p-10 transition-colors`}>
-                    <div className="max-w-4xl mx-auto space-y-8">
-                        <header className="flex justify-between items-center border-b border-[var(--border-color)] pb-6">
-                            <div className="flex items-center gap-3">
-                                <a href="https://github.com/justlovemaki" target="_blank" rel="noopener noreferrer">
-                                    <img src="./logo.jpg" className="w-10 h-10 rounded-full object-cover hover:opacity-80" alt="Logo" />
-                                </a>
-                            <div>
-                                <h1 className="text-2xl font-bold tracking-tight">
-                                    <span>知识库</span>
-                                    <span className="text-[var(--primary-color)]">管理</span>
-                                </h1>
-                                <p className="text-sm text-[var(--text-dim)]">为“何夕2077”分身注入硬核干货资料</p>
-                            </div>
+                <div className={`${isDarkMode ? 'theme-dark' : 'theme-light'} h-screen flex flex-col bg-[var(--bg-color)] text-[var(--text-main)] transition-colors overflow-hidden`}>
+                    {/* Header */}
+                    <header className="flex justify-between items-center px-6 py-4 border-b border-[var(--border-color)] bg-[var(--header-bg)] shrink-0">
+                        <div className="flex items-center gap-3">
+                            <a href="/" className="hover:opacity-80">
+                                <img src="./logo.jpg" className="w-8 h-8 rounded-full object-cover" alt="Logo" />
+                            </a>
+                            <h1 className="text-2xl font-bold tracking-tight">
+                                <span>知识库</span>
+                                <span className="text-[var(--primary-color)]">管理</span>
+                            </h1>
+                        </div>
+                        <div className="flex gap-4 items-center">
+                            <button onClick={toggleTheme} className="text-base text-[var(--text-dim)] hover:text-[var(--primary-color)]">
+                                {isDarkMode ? '切换浅色' : '切换暗色'}
+                            </button>
+                            <a href="/" className="text-base text-[var(--primary-color)] hover:underline">返回聊天 &rarr;</a>
+                        </div>
+                    </header>
 
-                            </div>
-                            <div className="flex gap-4 items-center">
-                                <button onClick={toggleTheme} className="text-gray-500 hover:text-[var(--primary-color)]">
-                                    {isDarkMode ? '切换浅色' : '切换暗色'}
+                    <div className="flex flex-1 overflow-hidden flex-col md:flex-row">
+                        {/* Sidebar */}
+                        <div className={`w-full md:w-80 lg:w-96 border-r border-[var(--border-color)] flex flex-col shrink-0 bg-black/10 ${previewContent ? 'hidden md:flex' : 'flex'}`}>
+                            <div className="p-4 border-b border-[var(--border-color)] bg-black/5 space-y-3">
+                                <button onClick={() => setIsAddModalOpen(true)} className="w-full primary-btn py-2.5 rounded-xl text-base flex items-center justify-center gap-2 shadow-lg hover:translate-y-[-1px] transition-all">
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
+                                    <span>注入新知识</span>
                                 </button>
-                                <a href="/" className="text-xs text-[var(--primary-color)] hover:underline">返回聊天 &rarr;</a>
-                            </div>
-                        </header>
-
-                        <div className="grid gap-8 md:grid-cols-2">
-                            <div className="glass p-6 rounded-2xl space-y-4 shadow-sm">
-                                <h2 className="text-lg font-bold">手动录入</h2>
-                                <div className="grid gap-4">
-                                    <input type="text" placeholder="资料标题" className="w-full bg-[var(--bg-color)] text-[var(--text-main)] border border-[var(--border-color)] rounded-xl p-3 outline-none focus:border-[var(--primary-color)] text-xs" value={newItem.title} onChange={e => setNewItem({...newItem, title: e.target.value})} />
-                                    <textarea placeholder="核心干货内容..." className="w-full bg-[var(--bg-color)] text-[var(--text-main)] border border-[var(--border-color)] rounded-xl p-3 outline-none focus:border-[var(--primary-color)] text-xs h-32 resize-none" value={newItem.content} onChange={e => setNewItem({...newItem, content: e.target.value})} />
-                                    <div className="flex items-center gap-2 mt-1">
-                                        <input type="checkbox" id="skipAI" className="accent-[var(--primary-color)]" checked={newItem.skipAI} onChange={e => setNewItem({...newItem, skipAI: e.target.checked})} />
-                                        <label htmlFor="skipAI" className="text-[10px] text-dim cursor-pointer">跳过 AI 自动语义拆分 (仍会生成摘要)</label>
-                                    </div>
-                                    <button onClick={handleAdd} disabled={loading} className={`primary-btn py-2 rounded-xl text-xs transition-all ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                                        {loading ? '正在注入...' : '注入知识库'}
+                                
+                                <div className="flex bg-black/30 p-1 rounded-xl border border-[var(--border-color)]">
+                                    <button 
+                                        onClick={() => setViewMode('index')} 
+                                        className={`flex-1 py-1.5 rounded-lg text-[14px] font-bold transition-all ${viewMode === 'index' ? 'bg-[var(--primary-color)] text-white shadow-sm' : 'text-dim hover:text-white'}`}
+                                    >
+                                        索引模式 (Index)
+                                    </button>
+                                    <button 
+                                        onClick={() => { setViewMode('wiki'); fetchWikiStructure(); }} 
+                                        className={`flex-1 py-1.5 rounded-lg text-[14px] font-bold transition-all ${viewMode === 'wiki' ? 'bg-[var(--primary-color)] text-white shadow-sm' : 'text-dim hover:text-white'}`}
+                                    >
+                                        百科模式 (Wiki)
                                     </button>
                                 </div>
-                            </div>
-                            <div className="glass p-6 rounded-2xl space-y-4 flex flex-col justify-center items-center border-dashed border-2 border-[var(--border-color)] hover:border-[var(--primary-color)] transition-colors">
-                                <h2 className="text-lg font-bold">文件上传</h2>
-                                <p className="text-[10px] text-dim text-center">支持 PDF, DOCX, TXT, MD</p>
-                                <div className="flex items-center gap-2 mt-2">
-                                    <input type="checkbox" id="fileSkipAI" className="accent-[var(--primary-color)]" checked={fileSkipAI} onChange={e => setFileSkipAI(e.target.checked)} />
-                                    <label htmlFor="fileSkipAI" className="text-[10px] text-dim cursor-pointer">跳过自动拆分 (仍生成摘要)</label>
+
+                                <div className="flex gap-2">
+                                    <div className="relative flex-1">
+                                        <input 
+                                            type="text" 
+                                            placeholder="搜索标题或主题..." 
+                                            className="w-full bg-black/20 text-[14px] text-[var(--text-main)] border border-[var(--border-color)] rounded-lg pl-8 pr-2 py-2 outline-none focus:border-[var(--primary-color)]"
+                                            value={searchQuery}
+                                            onChange={e => setSearchQuery(e.target.value)}
+                                        />
+                                        <svg className="w-3 h-3 absolute left-3 top-2.5 text-dim" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                                    </div>
+                                    <select 
+                                        className="bg-black/20 text-[14px] text-dim border border-[var(--border-color)] rounded-lg px-1 py-2 outline-none focus:border-[var(--primary-color)] cursor-pointer"
+                                        value={sortBy}
+                                        onChange={e => setSortBy(e.target.value)}
+                                    >
+                                        <option value="date-desc">时间 ↓</option>
+                                        <option value="date-asc">时间 ↑</option>
+                                        <option value="title-asc">标题 ↑</option>
+                                        <option value="title-desc">标题 ↓</option>
+                                    </select>
+                                    <button onClick={handleViewIndex} className="p-2 bg-black/20 text-dim hover:text-[var(--primary-color)] rounded-lg transition-colors border border-[var(--border-color)]" title="查看原始索引树">
+                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path></svg>
+                                    </button>
                                 </div>
-                                <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".pdf,.docx,.doc,.txt,.md" />
-                                <button onClick={() => fileInputRef.current?.click()} className="px-8 py-3 glass hover:bg-white/10 rounded-xl text-sm font-bold border border-[var(--border-color)]">选择文件</button>
+
+                                {selectedDocIds.length >= 2 && (
+                                    <button onClick={() => { 
+                                        const firstSelected = items.find(d => d.id === selectedDocIds[0]);
+                                        setMergeTitle((firstSelected?.title || '') + ' (合并)'); 
+                                        setIsMergeModalOpen(true); 
+                                    }} className="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-2 rounded-xl text-[14px] font-bold animate__animated animate__fadeIn">
+                                        合并选中项 ({selectedDocIds.length})
+                                    </button>
+                                )}
+                            </div>
+                            
+                            <div className="p-4 space-y-3 overflow-y-auto flex-1 scroll-thin">
+                                {viewMode === 'index' ? (
+                                    <>
+                                        <h2 className="text-base font-bold text-[var(--text-dim)] px-1 uppercase tracking-wider">
+                                            {searchQuery ? '搜索结果' : '已注入资料'} ({filteredAndSortedItems.length})
+                                        </h2>
+                                        {filteredAndSortedItems.map(doc => {
+                                            const isExpanded = expandedDocIds.includes(doc.id) || (searchQuery && doc.partsToShow.length > 0);
+                                            const isSelected = selectedDocIds.includes(doc.id);
+                                            return (
+                                                <div key={doc.id} className="space-y-1">
+                                                    <div onClick={() => {
+                                                        setExpandedDocIds(prev => 
+                                                            prev.includes(doc.id) ? prev.filter(id => id !== doc.id) : [...prev, doc.id]
+                                                        );
+                                                    }} className={`group flex justify-between items-center px-2 py-2 hover:bg-white/5 rounded-md transition-all cursor-pointer ${isExpanded ? 'bg-white/5' : ''} ${isSelected ? 'ring-1 ring-inset ring-indigo-500/50 bg-indigo-500/5' : ''}`}>
+                                                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                                                            <input type="checkbox" className="w-3 h-3 rounded accent-indigo-500 cursor-pointer shrink-0" checked={isSelected} onClick={e => e.stopPropagation()} onChange={() => toggleDocSelection(doc.id)} />
+                                                            
+                                                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                                                                <svg className={`w-3 h-3 text-dim transition-transform ${isExpanded ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path></svg>
+                                                                <span className={`text-[15px] font-bold truncate ${searchQuery && doc.titleMatch ? 'text-[var(--primary-color)]' : 'text-[var(--text-main)]'}`}>{doc.title}</span>
+                                                            </div>
+                                                            
+                                                            <button className="opacity-0 group-hover:opacity-100 text-[13px] text-dim hover:text-[var(--primary-color)] ml-1 hover:underline shrink-0" onClick={(e) => { e.stopPropagation(); setEditingTopic({ docId: doc.id, partId: null, value: doc.title, keywords: [] }); }}>编辑</button>
+                                                            {doc.skipAI && <span className="px-1 py-0.5 rounded bg-amber-500/20 text-amber-500 text-[11px] shrink-0">M</span>}
+                                                        </div>
+                                                        <button onClick={(e) => { e.stopPropagation(); handleDelete(doc.id); }} className="opacity-0 group-hover:opacity-100 text-red-500 text-[14px] hover:scale-110 transition-all ml-2 shrink-0">✕</button>
+                                                    </div>
+                                                    
+                                                    {isExpanded && doc.partsToShow.length > 0 && (
+                                                        <div className="pl-5 space-y-1 animate__animated animate__fadeIn animate__faster">
+                                                            {doc.partsToShow.map(part => {
+                                                                const isSelectedPart = selectedPart?.docId === doc.id && selectedPart?.partId === part.id;
+                                                                const isPartMatch = searchQuery && (part.topic.toLowerCase().includes(searchQuery.toLowerCase()) || (part.keywords && part.keywords.some(k => k.toLowerCase().includes(searchQuery.toLowerCase()))));
+                                                                return (
+                                                                    <div key={part.id} 
+                                                                        onClick={() => {
+                                                                            handlePreview(doc.id, part.id);
+                                                                            setSelectedPart({ docId: doc.id, partId: part.id });
+                                                                            setIsEditingContent(false);
+                                                                        }}
+                                                                        className={`group/part px-2 py-1.5 rounded text-[14px] cursor-pointer transition-all border ${isSelectedPart ? 'bg-[var(--primary-color)]/10 border-[var(--primary-color)]/30 text-[var(--primary-color)]' : 'bg-black/10 border-transparent hover:bg-black/20 text-[var(--text-dim)] hover:text-[var(--text-main)]'} ${isPartMatch ? 'ring-1 ring-[var(--primary-color)]/50' : ''}`}
+                                                                    >
+                                                                        <div className="flex justify-between items-center gap-2">
+                                                                            <span className={`truncate flex-1 font-medium ${isPartMatch ? 'text-[var(--primary-color)]' : ''}`}># {part.topic}</span>
+                                                                            <button className="opacity-0 group-hover/part:opacity-100 text-[13px] hover:underline shrink-0" onClick={(e) => { e.stopPropagation(); setEditingTopic({ docId: doc.id, partId: part.id, value: part.topic, keywords: part.keywords || [] }); }}>编辑</button>
+                                                                        </div>
+                                                                        {part.keywords && part.keywords.length > 0 && (
+                                                                            <div className="flex flex-wrap gap-1 mt-1 overflow-hidden opacity-60 group-hover/part:opacity-100 transition-opacity">
+                                                                                {part.keywords.slice(0, 6).map((k, i) => (
+                                                                                    <span key={i} className={`px-1 py-0 bg-white/5 rounded-[2px] text-[11px] whitespace-nowrap ${searchQuery && k.toLowerCase().includes(searchQuery.toLowerCase()) ? 'text-[var(--primary-color)]' : ''}`}>{k}</span>
+                                                                                ))}
+                                                                                {part.keywords.length > 6 && <span className="text-[11px]">...</span>}
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </>
+                                ) : (
+                                    <div className="space-y-6">
+                                        {Object.entries(filteredWikiStructure).map(([folder, files]) => (
+                                            <div key={folder} className="space-y-2">
+                                                <h3 className="text-base font-bold text-[var(--primary-color)] px-1 uppercase tracking-wider flex items-center gap-2">
+                                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path></svg>
+                                                    {folder} ({files.length})
+                                                </h3>
+                                                <div className="space-y-1">
+                                                    {files.map(file => {
+                                                        const isMatch = searchQuery && file.name.toLowerCase().includes(searchQuery.toLowerCase());
+                                                        return (
+                                                            <div 
+                                                                key={file.name} 
+                                                                onClick={async () => {
+                                                                    const path = `${folder}/${file.name}`;
+                                                                    const res = await fetch(`/api/wiki/file?path=${encodeURIComponent(path)}`, {
+                                                                        headers: { 'Authorization': sessionStorage.getItem('kb_token') }
+                                                                    });
+                                                                    const data = await res.json();
+                                                                    setPreviewContent(data.content);
+                                                                    setSelectedWikiFile(path);
+                                                                    setSelectedPart(null);
+                                                                }}
+                                                                className={`px-3 py-2 rounded-lg text-[14px] cursor-pointer transition-all border ${selectedWikiFile === `${folder}/${file.name}` ? 'bg-[var(--primary-color)]/10 border-[var(--primary-color)]/30 text-[var(--primary-color)]' : 'bg-white/5 border-transparent hover:bg-white/10 text-dim hover:text-white'} ${isMatch ? 'ring-1 ring-[var(--primary-color)]/50' : ''}`}
+                                                            >
+                                                                {file.name.replace('.md', '')}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                    {files.length === 0 && <p className="text-[13px] text-dim italic pl-2">无匹配结果</p>}
+                                                </div>
+                                            </div>
+                                        ))}
+                                        {Object.keys(filteredWikiStructure).length === 0 && (
+                                            <div className="text-center py-10 text-dim text-[14px]">
+                                                未找到相关百科内容
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         </div>
 
-                        <div className="space-y-4 pb-20">
-                            <h2 className="text-lg font-bold">已注入资料 ({items.length})</h2>
-                            <div className="grid gap-4 md:grid-cols-2">
-                                {items.map(doc => (
-                                    <div key={doc.id} className="glass p-4 rounded-xl relative group border border-[var(--border-color)] hover:border-[var(--primary-color)] transition-all">
-                                        <button onClick={() => handleDelete(doc.id)} className="absolute top-2 right-2 text-dim hover:text-red-500 opacity-0 group-hover:opacity-100">✕</button>
-                                        <div className="flex items-center gap-2 mb-2">
-                                            <h3 className="font-bold text-[var(--primary-color)] truncate pr-6 text-sm">{doc.title}</h3>
-                                            {doc.skipAI && <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-500 text-[8px] shrink-0">MANUAL</span>}
+                        {/* Content Area */}
+                        <div className={`flex-1 bg-[var(--bg-color)] relative flex flex-col overflow-hidden ${!previewContent ? 'hidden md:flex' : 'flex'}`}>
+                            {previewContent ? (
+                                <>
+                                    <header className="px-4 md:px-8 py-3 border-b border-[var(--border-color)] flex justify-between items-center bg-[var(--bg-color)] backdrop-blur-md shrink-0 z-20">
+                                        <div className="flex items-center gap-2">
+                                            <button onClick={() => setPreviewContent(null)} className="md:hidden p-2 -ml-2 hover:bg-white/10 rounded-full">
+                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
+                                            </button>
+                                            <span className="text-[14px] text-dim font-mono uppercase tracking-widest">
+                                                {isEditingContent ? 'Editing' : 'Preview'}
+                                            </span>
                                         </div>
-                                        <div className="space-y-1 mt-3 max-h-32 overflow-y-auto pr-1 scroll-thin">
-                                            {doc.parts.map(part => (
-                                                <button key={part.id} onClick={() => handlePreview(doc.id, part.id)} className="w-full text-left px-2 py-1.5 rounded bg-black/20 hover:bg-black/40 text-[10px] flex justify-between items-center group/part">
-                                                <div className="flex-1 truncate">
-                                                    {editingTopic.docId === doc.id && editingTopic.partId === part.id ? (
-                                                        <div className="flex items-center gap-1">
-                                                            <input autoFocus type="text" className="bg-black/40 text-[10px] text-white px-1 py-0.5 rounded outline-none border border-[var(--primary-color)] w-full" value={editingTopic.value} onChange={e => setEditingTopic({...editingTopic, value: e.target.value})} onBlur={() => handleTopicUpdate(doc.id, part.id)} onKeyDown={e => e.key === 'Enter' && handleTopicUpdate(doc.id, part.id)} onClick={e => e.stopPropagation()} />
-                                                        </div>
-                                                    ) : (
-                                                        <div className="flex items-center gap-1 group/topic">
-                                                            <span className="text-dim group-hover/part:text-white transition-colors">#{part.topic}</span>
-                                                            <button className="opacity-0 group-hover/part:opacity-100 text-[9px] text-[var(--primary-color)] ml-1 hover:underline" onClick={(e) => { e.stopPropagation(); setEditingTopic({ docId: doc.id, partId: part.id, value: part.topic }); }}>编辑</button>
-                                                        </div>
-                                                    )}
-                                                    {part.keywords && part.keywords.length > 0 && (
+                                        <div className="flex gap-2">
+                                            {isEditingContent ? (
+                                                <>
+                                                    <button onClick={() => setIsEditingContent(false)} className="text-[14px] px-2 md:px-3 py-1 rounded bg-white/5 hover:bg-white/10 transition-colors">取消</button>
+                                                    <button onClick={handleSaveContent} disabled={loading} className="text-[14px] px-2 md:px-3 py-1 rounded primary-btn">
+                                                        {loading ? '...' : '保存'}
+                                                    </button>
+                                                </>
+                                            ) : (
+                                                <button onClick={() => { setEditBuffer(previewContent); setIsEditingContent(true); }} className="text-[14px] px-2 md:px-3 py-1 rounded bg-white/5 hover:bg-white/10 border border-[var(--border-color)] transition-colors">编辑</button>
+                                            )}
+                                        </div>
+                                    </header>
 
-                                                            <div className="flex gap-1 mt-0.5 overflow-hidden">
-                                                                {part.keywords.map((k, i) => (
-                                                                    <span key={i} className="px-1 py-0 bg-white/5 rounded-[2px] text-[7px] text-dim whitespace-nowrap">{k}</span>
-                                                                ))}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                    <span className="text-[9px] text-dim ml-2 shrink-0">预览 &rarr;</span>
-                                                </button>
-                                            ))}
-                                        </div>
+                                    <div ref={contentAreaRef} onScroll={handleContentScroll} className="flex-1 overflow-y-auto overflow-x-hidden scroll-smooth scroll-thin relative">
+                                        {isEditingContent ? (
+                                            <textarea 
+                                                className="w-full h-full p-8 bg-transparent text-[var(--text-main)] font-mono text-base outline-none resize-none leading-relaxed min-h-[80vh]"
+                                                value={editBuffer}
+                                                onChange={e => setEditBuffer(e.target.value)}
+                                                placeholder="在此输入内容..."
+                                            />
+                                        ) : (
+                                            <div className="max-w-4xl mx-auto w-full p-8 md:p-12 animate__animated animate__fadeIn">
+                                                <div className="kb-markdown-body markdown-body" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked.parse(previewContent)) }} />
+                                            </div>
+                                        )}
                                     </div>
-                                ))}
+                                </>
+                            ) : (
+                                <div className="h-full flex flex-col items-center justify-center text-dim space-y-4 p-10 text-center">
+                                    <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center">
+                                        <svg className="w-8 h-8 opacity-20" fill="currentColor" viewBox="0 0 20 20"><path d="M9 4.804A7.993 7.993 0 002 12a5 5 0 001.586 3.586L10 21.172l6.414-6.414A5 5 0 0018 12a7.993 7.993 0 00-7-7.196V4a1 1 0 00-2 0v.804z"></path></svg>
+                                    </div>
+                                    <p className="text-lg">从左侧列表选择一个知识片段进行预览</p>
+                                </div>
+                            )}
+
+                            {/* Floating Actions (Outside scroll area but inside relative parent) */}
+                            <div className="absolute bottom-8 right-8 flex flex-col gap-3 z-50">
+                                {showScrollTop && (
+                                    <button 
+                                        onClick={() => contentAreaRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+                                        className="p-3 bg-[var(--primary-color)] text-white rounded-full shadow-2xl hover:scale-110 active:scale-95 transition-all animate__animated animate__fadeInUp animate__faster"
+                                        title="回到顶部"
+                                    >
+                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 10l7-7m0 0l7 7m-7-7v18"></path></svg>
+                                    </button>
+                                )}
                             </div>
                         </div>
                     </div>
 
-                    {previewContent && (
-                        <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4 md:p-10 animate__animated animate__fadeIn">
-                            <div className="glass w-full max-w-2xl max-h-[80vh] flex flex-col rounded-3xl overflow-hidden border border-[var(--border-color)]">
-                                <header className="p-4 border-b border-[var(--border-color)] flex justify-between items-center bg-black/20">
-                                    <h3 className="font-bold">内容预览</h3>
-                                    <button onClick={() => setPreviewContent(null)} className="p-2 hover:bg-white/10 rounded-full">✕</button>
-                                </header>
-                                <div className="flex-1 overflow-y-auto p-6 md:p-10 bg-[var(--bg-color)]">
-                                    <div className="markdown-body" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked.parse(previewContent)) }} />
+                    {/* Edit Modal */}
+                    {editingTopic.docId && (
+                        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm animate__animated animate__fadeIn animate__faster">
+                            <div className="glass p-6 rounded-2xl w-full max-w-sm space-y-4 shadow-2xl border border-[var(--border-color)]">
+                                <h3 className="text-lg font-bold">重命名 {editingTopic.partId ? '片段主题' : '文档标题'}</h3>
+                                <div className="space-y-4">
+                                    <div className="space-y-2">
+                                        <label className="text-[14px] font-bold text-dim uppercase">名称</label>
+                                        <input autoFocus type="text" className="w-full bg-black/40 text-lg text-[var(--text-main)] px-3 py-2 rounded-xl outline-none border border-[var(--border-color)] focus:border-[var(--primary-color)]" value={editingTopic.value} onChange={e => setEditingTopic({...editingTopic, value: e.target.value})} onKeyDown={e => e.key === 'Enter' && (editingTopic.partId ? handleTopicUpdate(editingTopic.docId, editingTopic.partId) : handleDocumentTitleUpdate(editingTopic.docId))} />
+                                    </div>
+
+                                    {editingTopic.partId && (
+                                        <div className="space-y-2">
+                                            <label className="text-[14px] font-bold text-dim uppercase flex justify-between items-center">
+                                                <span>标签管理</span>
+                                                <span className="text-[13px] lowercase font-normal opacity-50">回车添加</span>
+                                            </label>
+                                            <div className="flex flex-wrap gap-1.5 mb-2 p-2 bg-black/20 rounded-xl min-h-[40px] border border-[var(--border-color)]">
+                                                {editingTopic.keywords.map((tag, idx) => (
+                                                    <span key={idx} className="flex items-center gap-1 px-2 py-0.5 bg-[var(--primary-color)]/20 text-[var(--primary-color)] rounded-lg text-[14px]">
+                                                        {tag}
+                                                        <button onClick={() => setEditingTopic({...editingTopic, keywords: editingTopic.keywords.filter((_, i) => i !== idx)})} className="hover:text-red-500 text-[16px] leading-none">×</button>
+                                                    </span>
+                                                ))}
+                                                {editingTopic.keywords.length === 0 && <span className="text-[14px] text-dim opacity-30 px-1">暂无标签</span>}
+                                            </div>
+                                            <input 
+                                                type="text" 
+                                                placeholder="输入新标签..." 
+                                                className="w-full bg-black/40 text-base text-[var(--text-main)] border border-[var(--border-color)] rounded-xl px-3 py-2 outline-none focus:border-[var(--primary-color)]"
+                                                onKeyDown={e => {
+                                                    if (e.key === 'Enter') {
+                                                        e.preventDefault();
+                                                        const val = e.target.value.trim();
+                                                        if (val && !editingTopic.keywords.includes(val)) {
+                                                            setEditingTopic({...editingTopic, keywords: [...editingTopic.keywords, val]});
+                                                            e.target.value = '';
+                                                        }
+                                                    }
+                                                }}
+                                            />
+                                        </div>
+                                    )}
                                 </div>
-                                <footer className="p-4 border-t border-[var(--border-color)] text-center bg-black/20">
-                                    <button onClick={() => setPreviewContent(null)} className="px-6 py-2 primary-btn rounded-lg text-sm">关闭预览</button>
-                                </footer>
+                                <div className="flex gap-2 pt-2">
+                                    <button onClick={() => setEditingTopic({ docId: null, partId: null, value: '', keywords: [] })} className="flex-1 px-4 py-2 bg-white/10 rounded-xl text-base hover:bg-white/20 transition-colors">取消</button>
+                                    <button onClick={() => editingTopic.partId ? handleTopicUpdate(editingTopic.docId, editingTopic.partId) : handleDocumentTitleUpdate(editingTopic.docId)} className="flex-1 primary-btn py-2 rounded-xl text-base">保存</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Add Knowledge Modal */}
+                    {isAddModalOpen && (
+                        <div className="fixed inset-0 bg-black/80 z-[110] flex items-center justify-center p-4 backdrop-blur-sm animate__animated animate__fadeIn animate__faster">
+                            <div className="glass w-full max-w-2xl p-6 rounded-3xl space-y-6 shadow-2xl border border-[var(--border-color)]">
+                                <header className="flex justify-between items-center">
+                                    <h2 className="text-2xl font-bold">注入新知识</h2>
+                                    <button onClick={() => setIsAddModalOpen(false)} className="p-2 hover:bg-white/10 rounded-full text-dim hover:text-white">✕</button>
+                                </header>
+                                
+                                <div className="grid md:grid-cols-2 gap-8">
+                                    <div className="space-y-4">
+                                        <h3 className="text-base font-bold text-dim uppercase">手动录入</h3>
+                                        <div className="space-y-3">
+                                            <input type="text" placeholder="资料标题" className="w-full bg-black/20 text-[var(--text-main)] border border-[var(--border-color)] rounded-xl p-3 outline-none focus:border-[var(--primary-color)] text-base" value={newItem.title} onChange={e => setNewItem({...newItem, title: e.target.value})} />
+                                            <textarea placeholder="核心干货内容..." className="w-full bg-black/20 text-[var(--text-main)] border border-[var(--border-color)] rounded-xl p-3 outline-none focus:border-[var(--primary-color)] text-base h-32 resize-none" value={newItem.content} onChange={e => setNewItem({...newItem, content: e.target.value})} />
+                                            <div className="flex items-center gap-2">
+                                                <input type="checkbox" id="skipAI" className="accent-[var(--primary-color)]" checked={newItem.skipAI} onChange={e => setNewItem({...newItem, skipAI: e.target.checked})} />
+                                                <label htmlFor="skipAI" className="text-[14px] text-dim cursor-pointer">跳过语义拆分</label>
+                                            </div>
+                                            <button onClick={handleAdd} disabled={loading} className={`w-full primary-btn py-3 rounded-xl text-base font-bold transition-all ${loading ? 'opacity-50' : ''}`}>
+                                                {loading ? '正在处理...' : '提交'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="flex flex-col items-center justify-center border-2 border-dashed border-[var(--border-color)] rounded-2xl p-6 space-y-4 hover:border-[var(--primary-color)] transition-colors group relative min-h-[200px]">
+                                        <h3 className="text-base font-bold text-dim uppercase">文件上传</h3>
+                                        <p className="text-[14px] text-dim text-center">支持 PDF, DOCX, TXT, MD</p>
+                                        <div className="flex flex-col items-center gap-2">
+                                            <div className="flex items-center gap-2">
+                                                <input type="checkbox" id="fileSkipAI" className="accent-[var(--primary-color)]" checked={fileSkipAI} onChange={e => setFileSkipAI(e.target.checked)} />
+                                                <label htmlFor="fileSkipAI" className="text-[14px] text-dim cursor-pointer">跳过语义拆分</label>
+                                            </div>
+                                            <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".pdf,.docx,.doc,.txt,.md" />
+                                            <button onClick={() => fileInputRef.current?.click()} disabled={loading} className={`px-8 py-3 glass hover:bg-white/10 rounded-xl text-lg font-bold border border-[var(--border-color)] group-hover:border-[var(--primary-color)] transition-all ${loading ? 'opacity-50' : ''}`}>
+                                                {loading ? '上传中...' : '选择文件'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    {/* Merge Modal */}
+                    {isMergeModalOpen && (
+                        <div className="fixed inset-0 bg-black/80 z-[120] flex items-center justify-center p-4 backdrop-blur-sm animate__animated animate__fadeIn animate__faster">
+                            <div className="glass w-full max-w-sm p-6 rounded-3xl space-y-6 shadow-2xl border border-[var(--border-color)]">
+                                <header className="flex justify-between items-center">
+                                    <h2 className="text-[22px] font-bold">合并主题 ({selectedDocIds.length})</h2>
+                                    <button onClick={() => setIsMergeModalOpen(false)} className="p-2 hover:bg-white/10 rounded-full text-dim hover:text-white">✕</button>
+                                </header>
+                                
+                                <div className="space-y-4">
+                                    <div className="space-y-2">
+                                        <label className="text-base font-bold text-dim uppercase">新主题名称</label>
+                                        <input autoFocus type="text" className="w-full bg-black/20 text-lg text-[var(--text-main)] border border-[var(--border-color)] rounded-xl p-3 outline-none focus:border-indigo-500" value={mergeTitle} onChange={e => setMergeTitle(e.target.value)} />
+                                    </div>
+                                    
+                                    <div className="p-3 bg-white/5 rounded-xl space-y-2">
+                                        <p className="text-[14px] text-dim">即将合并以下内容：</p>
+                                        <div className="max-h-32 overflow-y-auto space-y-1 pr-2 scroll-thin">
+                                            {selectedDocIds.map(id => {
+                                                const doc = items.find(d => d.id === id);
+                                                return <div key={id} className="text-[14px] truncate opacity-80">• {doc?.title}</div>;
+                                            })}
+                                        </div>
+                                    </div>
+                                    
+                                    <button onClick={handleMerge} disabled={loading || !mergeTitle.trim()} className={`w-full bg-indigo-500 hover:bg-indigo-600 text-white py-3 rounded-xl text-base font-bold transition-all ${loading ? 'opacity-50' : ''}`}>
+                                        {loading ? '正在合并...' : '确认合并'}
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     )}

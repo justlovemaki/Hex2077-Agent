@@ -1,4 +1,12 @@
-export const antiHallucination = `
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const dataPath = path.join(__dirname, '../../data/antiHallucination.txt');
+
+export const antiHallucination = fs.existsSync(dataPath) ? fs.readFileSync(dataPath, 'utf8') : `
 ### 反幻觉系统工程协议：
 
 1. **来源限制协议**：

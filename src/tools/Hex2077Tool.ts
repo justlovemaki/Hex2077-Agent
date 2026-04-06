@@ -7,6 +7,7 @@ import { strategy } from '../prompts/strategy.js';
 import { cooperation } from '../prompts/cooperation.js';
 import { antiHallucination } from '../prompts/antiHallucination.js';
 import { orchestrator } from '../prompts/orchestrator.js'; // 引入调度器 prompt
+import { shaper } from '../prompts/shaper.js'; // 引入身份重塑 prompt
 import { summary, chatSummary } from '../prompts/summary.js'; // 引入总结提示词
 import { AIHelper } from '../utils/AIHelper.js';
 
@@ -98,7 +99,9 @@ export class Hex2077Tool extends BaseTool {
   private async strategize(aiProvider: AIProvider, fullPrompt: AIMessage[], logPrefix: string): Promise<{ typeCode: string, strategyTag: string, agentsToCall: string[], keywords: string[], urls: string[] }> {
     const builtinTools = [{ google_search: {} }, { url_context: {} }];
     // 结合 orchestrator 与 strategy 进行决策
-    const strategyPrompt = `${orchestrator}\n\n${strategy}\n\n请严格基于上述逻辑输出。`;
+    const currentOrchestrator = this.context.personaService?.getOrchestrator() || orchestrator;
+    const currentStrategy = this.context.personaService?.getStrategy() || strategy;
+    const strategyPrompt = `${currentOrchestrator}\n\n${currentStrategy}\n\n请严格基于上述逻辑输出。`;
     this.logger.info(`${logPrefix} Calling Strategizer AI...`);
     const strategyRes = await aiProvider.generateContent(fullPrompt, builtinTools, strategyPrompt);
     
@@ -207,7 +210,8 @@ export class Hex2077Tool extends BaseTool {
     const builtinTools = [{ google_search: {} }, { url_context: {} }];
     this.logger.info(`${logPrefix} [PageSummarizer] Summarizing URL: ${urlString}`);
     // 利用 aiProvider 的 url_context 能力，如果模型支持则会自动解析该链接
-    const res = await aiProvider.generateContent([{ role: 'user', content: `请总结所有链接内容：${urlString}` }], builtinTools, summary);
+    const currentSummary = this.context.personaService?.getSummary() || summary;
+    const res = await aiProvider.generateContent([{ role: 'user', content: `请总结所有链接内容：${urlString}` }], builtinTools, currentSummary);
     this.logger.info(`${logPrefix} [PageSummarizer] Summary completed.`);
     return res.content;
   }
@@ -226,7 +230,8 @@ export class Hex2077Tool extends BaseTool {
       return 'No specific knowledge found.';
     }
     this.logger.info(`${logPrefix} [KnowledgeExpert] Knowledge found (length: ${kbRes.length}). Extracting dry goods...`);
-    const kbPrompt = `${knowledge}\n\n任务：从以下内容中提取与用户问题【直接相关】的干货点。\n要求：以无序列表输出，每点不超过 30 字，严禁润色或增加前言后语。\n内容：\n${kbRes}`;
+    const currentKnowledge = this.context.personaService?.getKnowledge() || knowledge;
+    const kbPrompt = `${currentKnowledge}\n\n任务：从以下内容中提取与用户问题【直接相关】的干货点。\n要求：以无序列表输出，每点不超过 30 字，严禁润色或增加前言后语。\n内容：\n${kbRes}`;
     // 明确不使用 builtinTools
     const res = await aiProvider.generateContent(fullPrompt, [], kbPrompt);
     this.logger.info(`${logPrefix} [KnowledgeExpert] Dry goods extracted.`);
@@ -235,7 +240,8 @@ export class Hex2077Tool extends BaseTool {
 
   private async callProjectArchivist(aiProvider: AIProvider, fullPrompt: AIMessage[], logPrefix: string): Promise<string> {
     this.logger.info(`${logPrefix} [ProjectArchivist] Screening project archives...`);
-    const projectPrompt = `${projects}\n\n任务：筛选与当前问题相关的项目经历。\n要求：仅提供项目名和核心成果（单句描述），严禁背景介绍。`;
+    const currentProjects = this.context.personaService?.getProjects() || projects;
+    const projectPrompt = `${currentProjects}\n\n任务：筛选与当前问题相关的项目经历。\n要求：仅提供项目名和核心成果（单句描述），严禁背景介绍。`;
     // 明确不使用 builtinTools
     const res = await aiProvider.generateContent(fullPrompt, [], projectPrompt);
     this.logger.info(`${logPrefix} [ProjectArchivist] Screening completed.`);
@@ -244,7 +250,8 @@ export class Hex2077Tool extends BaseTool {
 
   private async callAIInsightAgent(aiProvider: AIProvider, input: string, fullPrompt: AIMessage[], logPrefix: string): Promise<string> {
     this.logger.info(`${logPrefix} [AIInsightAgent] Generating AI insights...`);
-    const aiInsightPrompt = `${knowledge}\n\n任务：针对 "${input}" 提供核心逻辑判断。\n要求：给出 1-2 条犀利的结论，单句长度控制在 40 字以内。`;
+    const currentKnowledge = this.context.personaService?.getKnowledge() || knowledge;
+    const aiInsightPrompt = `${currentKnowledge}\n\n任务：针对 "${input}" 提供核心逻辑判断。\n要求：给出 1-2 条犀利的结论，单句长度控制在 40 字以内。`;
     const res = await aiProvider.generateContent(fullPrompt, [], aiInsightPrompt);
     this.logger.info(`${logPrefix} [AIInsightAgent] Insights generated.`);
     return res.content;
@@ -252,7 +259,8 @@ export class Hex2077Tool extends BaseTool {
 
   private async callBusinessConsultant(aiProvider: AIProvider, input: string, fullPrompt: AIMessage[], logPrefix: string): Promise<string> {
     this.logger.info(`${logPrefix} [BusinessConsultant] Analyzing business potential...`);
-    const bizPrompt = `${cooperation}\n\n任务：分析合作潜力。\n要求：仅输出 1 条关键对接思路，不要寒暄。`;
+    const currentCooperation = this.context.personaService?.getCooperation() || cooperation;
+    const bizPrompt = `${currentCooperation}\n\n任务：分析合作潜力。\n要求：仅输出 1 条关键对接思路，不要寒暄。`;
     const res = await aiProvider.generateContent(fullPrompt, [], bizPrompt);
     this.logger.info(`${logPrefix} [BusinessConsultant] Analysis completed.`);
     return res.content;
@@ -262,24 +270,26 @@ export class Hex2077Tool extends BaseTool {
     this.logger.info(`${logPrefix} [ChatSummarizer] Summarizing dialogue history...`);
     // 排除当前最后一条用户输入，仅总结之前的历史（或包含当前输入以梳理现状）
     // 这里选择包含完整 prompt 以便总结当前的“共识”
-    const res = await aiProvider.generateContent(fullPrompt, [], chatSummary);
+    const currentChatSummary = this.context.personaService?.getChatSummary() || chatSummary;
+    const res = await aiProvider.generateContent(fullPrompt, [], currentChatSummary);
     this.logger.info(`${logPrefix} [ChatSummarizer] Dialogue summary completed.`);
     return res.content;
   }
 
   private async *generateFinalResponse(aiProvider: AIProvider, typeCode: string, fullPrompt: AIMessage[], facts: string): AsyncGenerator<{ type: 'status' | 'content' | 'strategy' | 'done', data: any }> {
-    const identityPrompt = `
-${persona}
-${style}
-${antiHallucination}
-${typeCode === 'F' ? cooperation : ''}
+    const currentPersona = this.context.personaService?.getPersona() || persona;
+    const currentStyle = this.context.personaService?.getStyle() || style;
+    const currentAntiHallucination = this.context.personaService?.getAntiHallucination() || antiHallucination;
+    const currentCooperation = this.context.personaService?.getCooperation() || cooperation;
+    const currentShaper = this.context.personaService?.getShaper() || shaper;
 
-任务：以 何夕2077 的身份，istj的人格回复。
-核心准则：
-1. 极简主义：能用一句话说清楚的绝不用两句。
-2. 结论先行：第一句直接抛出判断或核心答案。
-3. 拒绝 AI 味：删除“首先、其次、总之”、“希望能帮到你”等所有废话。
-4. 句式习惯：短促、有力，多用陈述句和反问句，少用修饰词。
+    const identityPrompt = `
+${currentPersona}
+${currentStyle}
+${currentAntiHallucination}
+${typeCode === 'F' ? currentCooperation : ''}
+
+${currentShaper}
 
 收集到的事实（仅供参考，请根据事实重构逻辑并以你的语感回复，不要复述）：
 ${facts}

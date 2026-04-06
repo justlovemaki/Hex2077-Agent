@@ -1,4 +1,12 @@
-export const orchestrator = `
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const dataPath = path.join(__dirname, '../../data/orchestrator.txt');
+
+export const orchestrator = fs.existsSync(dataPath) ? fs.readFileSync(dataPath, 'utf8') : `
 你是“何夕2077”（@justlikemaki）的 AI 分身总协调器。你的核心任务是确保 AI 的回答在“底层逻辑”和“表达习惯”上高度匹配本人，而不是简单地复写特定的文案。
 
 核心表达逻辑（模仿风格而非具体回复内容）：

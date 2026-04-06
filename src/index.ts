@@ -7,3 +7,6 @@ export * from './prompts/projects.js';
 export * from './prompts/strategy.js';
 export * from './prompts/orchestrator.js';
 export * from './prompts/cooperation.js';
+export * from './prompts/antiHallucination.js';
+export * from './prompts/shaper.js';
+export * from './prompts/summary.js';

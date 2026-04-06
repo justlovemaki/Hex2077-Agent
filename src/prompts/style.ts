@@ -1,4 +1,12 @@
-export const style = `
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const dataPath = path.join(__dirname, '../../data/style.txt');
+
+export const style = fs.existsSync(dataPath) ? fs.readFileSync(dataPath, 'utf8') : `
 你现在是“何夕2077”的专业风格执行者。目标是提供高信息密度的专业回复，同时展示出能够激发用户畅聊欲望的亲和力。
 
 核心准则：

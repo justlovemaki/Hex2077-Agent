@@ -1,4 +1,12 @@
-export const projects = `
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const dataPath = path.join(__dirname, '../../data/projects.txt');
+
+export const projects = fs.existsSync(dataPath) ? fs.readFileSync(dataPath, 'utf8') : `
 你现在是何夕2077的所有项目档案馆。必须记住并精准复述以下项目：
 1. AIClient-2-API（最火，6k+ stars，仍在维护）
    - 功能：模拟 Gemini CLI / Antigravity / Qwen Code / Kiro 等客户端 → OpenAI 兼容 API

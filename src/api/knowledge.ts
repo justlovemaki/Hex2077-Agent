@@ -41,6 +41,32 @@ export default async function knowledgeRoutes(fastify: FastifyInstance, options:
 
   fastify.get('/knowledge', { preHandler: checkAuth }, async () => await kbService.listDocuments());
 
+  fastify.get('/wiki', { preHandler: checkAuth }, async () => {
+    return await kbService.getWikiStructure();
+  });
+
+  fastify.get('/wiki/file', { preHandler: checkAuth }, async (request, reply) => {
+    const { path: filePath } = request.query as { path: string };
+    if (!filePath) return reply.status(400).send({ error: 'Missing path' });
+    try {
+      const content = await kbService.getWikiFileContent(filePath);
+      return { content };
+    } catch (err: any) {
+      return reply.status(404).send({ error: err.message });
+    }
+  });
+
+  fastify.patch('/wiki/file', { preHandler: checkAuth }, async (request, reply) => {
+    const { path: filePath, content } = request.body as { path: string, content: string };
+    if (!filePath || content === undefined) return reply.status(400).send({ error: 'Missing required fields' });
+    try {
+      await kbService.updateWikiFileContent(filePath, content);
+      return { success: true };
+    } catch (err: any) {
+      return reply.status(500).send({ error: err.message });
+    }
+  });
+
   fastify.post('/knowledge/upload', { preHandler: checkAuth }, async (request: any, reply: any) => {
     const data = await request.file();
     if (!data) return reply.status(400).send({ error: 'No file uploaded' });
@@ -68,13 +94,46 @@ export default async function knowledgeRoutes(fastify: FastifyInstance, options:
     return { success: true };
   });
 
-  fastify.patch('/knowledge/part/:docId/:partId', { preHandler: checkAuth }, async (request, reply) => {
-    const { docId, partId } = request.params as { docId: string; partId: string };
-    const { topic } = request.body as { topic: string };
-    if (!topic) return reply.status(400).send({ error: 'Missing topic' });
+  fastify.post('/knowledge/merge', { preHandler: checkAuth }, async (request, reply) => {
+    const { docIds, title } = request.body as { docIds: string[]; title: string };
+    if (!docIds || docIds.length < 2 || !title) {
+      return reply.status(400).send({ error: 'Missing required fields' });
+    }
     
     try {
-      await kbService.updatePartTopic(docId, partId, topic);
+      return await kbService.mergeDocuments(docIds, title);
+    } catch (err: any) {
+      return reply.status(500).send({ error: err.message });
+    }
+  });
+
+  fastify.patch('/knowledge/:id', { preHandler: checkAuth }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { title } = request.body as { title: string };
+    if (!title) return reply.status(400).send({ error: 'Missing title' });
+    
+    try {
+      await kbService.updateDocumentTitle(id, title);
+      return { success: true };
+    } catch (err: any) {
+      return reply.status(500).send({ error: err.message });
+    }
+  });
+
+  fastify.patch('/knowledge/part/:docId/:partId', { preHandler: checkAuth }, async (request, reply) => {
+    const { docId, partId } = request.params as { docId: string; partId: string };
+    const { topic, content, keywords } = request.body as { topic?: string, content?: string, keywords?: string[] };
+    
+    try {
+      if (topic) {
+        await kbService.updatePartTopic(docId, partId, topic);
+      }
+      if (content) {
+        await kbService.updatePartContent(docId, partId, content);
+      }
+      if (keywords) {
+        await kbService.updatePartKeywords(docId, partId, keywords);
+      }
       return { success: true };
     } catch (err: any) {
       return reply.status(500).send({ error: err.message });

@@ -12,9 +12,17 @@ export class AIHelper {
       const content = response.content;
       
       // Attempt to extract JSON from markdown or raw text
-      const jsonMatch = content.match(/\[[\s\S]*\]|\{[\s\S]*\}/);
-      if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]);
+      // We try to find the longest JSON-like block (usually the main result)
+      const matches = content.match(/\[[\s\S]*\]|\{[\s\S]*\}/g);
+      if (matches) {
+        // Try parsing each match, starting from the last one (often models put reasoning first, then JSON)
+        for (let i = matches.length - 1; i >= 0; i--) {
+          try {
+            return JSON.parse(matches[i]);
+          } catch {
+            continue;
+          }
+        }
       }
       return JSON.parse(content);
     } catch (e) {

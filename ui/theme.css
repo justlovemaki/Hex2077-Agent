@@ -20,19 +20,58 @@
     --header-bg: rgba(0, 0, 0, 0.8);
 }
 
-/* 浅色主题 */
+/* 浅色模式优化 - 现代简约风格 */
 .theme-light {
-    --bg-color: #f4f4f5;
+    --bg-color: #f8fafc;
     --container-bg: #ffffff;
-    --primary-color: #2563eb; /* 蓝色 */
-    --primary-glow: rgba(37, 99, 235, 0.1);
-    --ai-msg-bg: #e4e4e7;
-    --user-msg-bg: #2563eb;
+    --primary-color: #0ea5e9; /* 鲜活的天蓝色 */
+    --primary-glow: rgba(14, 165, 233, 0.1);
+    --ai-msg-bg: #f1f5f9;
+    --user-msg-bg: #0ea5e9;
     --user-text: #ffffff;
-    --text-main: #18181b;
-    --text-dim: #71717a;
-    --border-color: rgba(0, 0, 0, 0.05);
-    --header-bg: rgba(255, 255, 255, 0.8);
+    --text-main: #0f172a;
+    --text-dim: #64748b;
+    --border-color: #e2e8f0;
+    --header-bg: rgba(255, 255, 255, 0.9);
+}
+
+.theme-light .glass {
+    background: rgba(255, 255, 255, 0.7);
+    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    border: 1px solid #ffffff;
+}
+
+.theme-light .primary-btn {
+    color: #fff !important;
+    box-shadow: 0 4px 14px 0 rgba(14, 165, 233, 0.3);
+}
+
+.theme-light select, 
+.theme-light input, 
+.theme-light textarea {
+    background-color: #ffffff !important;
+    border: 1px solid #e2e8f0;
+}
+
+.theme-light select:focus, 
+.theme-light input:focus, 
+.theme-light textarea:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px var(--primary-glow);
+}
+
+.theme-light .bg-black\/10 { background-color: #f1f5f9; }
+.theme-light .bg-black\/20 { background-color: #ffffff; border: 1px solid #e2e8f0; }
+.theme-light .bg-black\/40 { background-color: #ffffff; border: 1px solid #e2e8f0; }
+.theme-light .bg-white\/5 { background-color: #f8fafc; }
+.theme-light .bg-white\/10 { background-color: #f1f5f9; }
+.theme-light .bg-white\/20 { background-color: #e2e8f0; }
+
+.theme-light ::-webkit-scrollbar-thumb { background: #cbd5e1; }
+.theme-light ::-webkit-scrollbar-track { background: transparent; }
+
+.theme-light .markdown-body {
+    color: #334155;
 }
 
 body {
@@ -102,34 +141,126 @@ textarea::placeholder, input::placeholder {
     border: 1px solid rgba(255, 153, 0, 0.1);
 }
 
-/* Markdown 渲染适配 */
-.markdown-body a {
-    color: var(--primary-color);
-    text-decoration: underline;
-    font-weight: bold;
-    transition: color 0.2s, opacity 0.2s;
+/* Markdown 渲染深度美化 */
+.markdown-body {
+    line-height: 1.7;
+    font-size: 14px;
+    color: var(--text-main);
+    overflow-wrap: break-word;
+    word-break: break-word;
 }
 
-/* 修复用户消息中链接不可见的问题 */
-.user-message .markdown-body a {
-    color: var(--user-text);
-    opacity: 0.9;
-    text-decoration: underline;
+.kb-markdown-body {
+    font-size: 18px;
 }
 
-.user-message .markdown-body a:hover {
-    opacity: 1;
-    filter: brightness(1.2);
+.markdown-body h1, .markdown-body h2, .markdown-body h3 {
+    margin-top: 1.5em;
+    margin-bottom: 1em;
+    font-weight: 700;
+    line-height: 1.3;
 }
 
-.markdown-body p { margin-bottom: 0.75rem; }
-.markdown-body p:last-child { margin-bottom: 0; }
+.markdown-body h1 { font-size: 1.8em; border-bottom: 2px solid var(--border-color); padding-bottom: 0.3em; }
+.markdown-body h2 { font-size: 1.4em; border-bottom: 1px solid var(--border-color); padding-bottom: 0.3em; }
+.markdown-body h3 { font-size: 1.2em; }
+
+.markdown-body p { margin-bottom: 1em; }
+
+.markdown-body ul, .markdown-body ol {
+    padding-left: 1.5em;
+    margin-bottom: 1em;
+}
+
+.markdown-body li { margin-bottom: 0.5em; }
 
 .markdown-body code {
-    background: rgba(128, 128, 128, 0.2);
-    padding: 0.1rem 0.3rem;
+    background: rgba(128, 128, 128, 0.15);
+    padding: 0.2em 0.4em;
     border-radius: 4px;
     font-family: 'JetBrains Mono', monospace;
+    font-size: 0.9em;
+}
+
+.markdown-body pre {
+    background: rgba(0, 0, 0, 0.2);
+    padding: 1em;
+    border-radius: 12px;
+    margin-bottom: 1.5em;
+    overflow-x: auto;
+    border: 1px solid var(--border-color);
+    max-width: 100%;
+}
+
+.markdown-body blockquote {
+    margin: 1.5em 0;
+    padding: 0.5em 1em;
+    color: var(--text-dim);
+    border-left: 4px solid var(--primary-color);
+    background: var(--primary-glow);
+    border-radius: 0 8px 8px 0;
+    overflow-wrap: break-word;
+}
+
+.markdown-body table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1.5em;
+    display: block;
+    overflow-x: auto;
+}
+
+
+.theme-light .markdown-body pre {
+    background: #f1f5f9;
+}
+
+.markdown-body pre code {
+    background: transparent;
+    padding: 0;
+    font-size: 0.85em;
+}
+
+.markdown-body blockquote {
+    margin: 1.5em 0;
+    padding: 0.5em 1em;
+    color: var(--text-dim);
+    border-left: 4px solid var(--primary-color);
+    background: var(--primary-glow);
+    border-radius: 0 8px 8px 0;
+}
+
+.markdown-body table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1.5em;
+}
+
+.markdown-body th, .markdown-body td {
+    padding: 0.75em;
+    border: 1px solid var(--border-color);
+    text-align: left;
+}
+
+.markdown-body th {
+    background: rgba(128, 128, 128, 0.05);
+    font-weight: bold;
+}
+
+.markdown-body img {
+    max-width: 100%;
+    border-radius: 8px;
+    margin: 1em 0;
+}
+
+.markdown-body a {
+    color: var(--primary-color);
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.markdown-body a:hover {
+    text-decoration: underline;
 }
 
 /* 特色按钮 */
