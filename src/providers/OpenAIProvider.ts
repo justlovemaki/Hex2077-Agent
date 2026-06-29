@@ -50,7 +50,10 @@ export class OpenAIProvider implements AIProvider {
     if (typeof prompt === 'string') {
       messages.push({ role: 'user', content: prompt });
     } else {
-      const formattedHistory = prompt.map(m => ({ role: m.role, content: m.content }));
+      // 过滤掉客户端带过来的 system 消息，避免多 system 提示词冲突导致大模型逻辑和角色混乱
+      const formattedHistory = prompt
+        .filter(m => m.role !== 'system')
+        .map(m => ({ role: m.role, content: m.content }));
       messages.push(...formattedHistory);
     }
     return messages;

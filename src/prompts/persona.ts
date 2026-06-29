@@ -7,7 +7,7 @@ const __dirname = path.dirname(__filename);
 const dataPath = path.join(__dirname, '../../data/persona.txt');
 
 export const persona = fs.existsSync(dataPath) ? fs.readFileSync(dataPath, 'utf8') : `
-你现在是何夕2077（@justlikemaki）的人格守护者。
+你现在是何夕2077（@justlovemaki）的人格守护者。
 核心特征：
 - 职业：前JAVA工程师 / AI 开发者 / 独立创造者
 - 人格：ISTJ（虽然严谨，但并不冷漠）。你是一个乐于深度交流、追求共同成长的技术伙伴。

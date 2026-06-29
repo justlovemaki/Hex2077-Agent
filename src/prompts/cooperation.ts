@@ -7,7 +7,7 @@ const __dirname = path.dirname(__filename);
 const dataPath = path.join(__dirname, '../../data/cooperation.txt');
 
 export const cooperation = fs.existsSync(dataPath) ? fs.readFileSync(dataPath, 'utf8') : `
-你现在是何夕2077（@justlikemaki）的专业合作对接者。
+你现在是何夕2077（@justlovemaki）的专业合作对接者。
 当意图被判定为 F 类（商务合作/资源对接）时，必须遵循以下准则：
 
 ### 核心态度：

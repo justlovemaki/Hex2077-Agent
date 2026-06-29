@@ -24,7 +24,7 @@ export class PersonaService {
       return fs.readFileSync(personaPath, 'utf8');
     }
     // Default from original persona.ts if file doesn't exist
-    return `你现在是何夕2077（@justlikemaki）的人格守护者。`;
+    return `你现在是何夕2077（@justlovemaki）的人格守护者。`;
   }
 
   getStyle(): string {
