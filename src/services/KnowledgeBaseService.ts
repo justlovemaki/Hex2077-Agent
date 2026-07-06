@@ -8,6 +8,7 @@ export interface KnowledgeIndexEntry {
   title: string;
   date: string;
   skipAI?: boolean;
+  rawFilePath?: string;
     parts: {
       id: string;
       topic: string;
@@ -139,10 +140,13 @@ export class SimpleKnowledgeBaseService {
     const docId = Math.random().toString(36).substring(2, 11);
     const docDir = path.join(this.baseDir, docId);
     const skipAI = options?.skipAI === true;
+    const rawFilePath = path.join(docId, 'raw.md');
+    let docDirCreated = false;
+    let wikiSynthesis: Awaited<ReturnType<typeof this.prepareWikiSynthesis>> | null = null;
+    let wikiCommitted = false;
+    let previousIndex: KnowledgeIndexEntry[] | null = null;
     
     try {
-      await fs.mkdir(docDir, { recursive: true });
-
       this.log(`Starting processing for document: ${title}${skipAI ? ' (Skip AI Processing)' : ''}`);
 
       let parts: any[] = [];
@@ -177,20 +181,34 @@ export class SimpleKnowledgeBaseService {
         this.log(`AI identified ${parts.length} topics for ${title}.`);
       }
 
-      // --- 阶段 2: 存储文件 + 建立索引 ---
+      wikiSynthesis = await this.prepareWikiSynthesis(title, content, parts);
+
+      await fs.mkdir(docDir, { recursive: true });
+      docDirCreated = true;
+      await fs.writeFile(path.join(this.baseDir, rawFilePath), content);
+
       const processedParts = await this.savePartsAndGetIndex(docId, parts);
+      await this.commitWikiSynthesis(wikiSynthesis);
+      wikiCommitted = true;
 
-      const index = await this.getIndex();
-      index.push({ id: docId, title, date: new Date().toISOString(), skipAI, parts: processedParts });
-      await this.saveIndex(index);
-
-      // --- 阶段 3: Wiki 自动合成 ---
-      await this.runWikiSynthesis(title, content, parts);
+      previousIndex = await this.getIndex();
+      const nextIndex = [...previousIndex, { id: docId, title, date: new Date().toISOString(), skipAI, rawFilePath, parts: processedParts }];
+      await this.saveIndex(nextIndex);
+      await this.writeWikiLog(`Ingest | ${wikiSynthesis.title}\n- Generated summary: summaries/${wikiSynthesis.summaryFileName}\n- Updated ${wikiSynthesis.entityCount} entities and ${wikiSynthesis.conceptCount} concepts.`);
 
       this.log(`Document processing completed: ${docId} (${title})`);
       return { docId, title, partCount: parts.length };
     } catch (err: any) {
       this.log(`Failed to add item ${title}: ${err.message}`, 'error');
+      if (docDirCreated) {
+        await this.cleanupDirectory(docDir);
+      }
+      if (wikiCommitted && wikiSynthesis) {
+        await this.rollbackWikiSynthesis(wikiSynthesis);
+      }
+      if (previousIndex) {
+        await this.saveIndex(previousIndex);
+      }
       throw err;
     }
   }
@@ -198,16 +216,15 @@ export class SimpleKnowledgeBaseService {
   /**
    * 将文档内容合成到 Wiki (Entities/Concepts)
    */
-  private async runWikiSynthesis(title: string, rawContent: string, parts: any[]) {
+  private async prepareWikiSynthesis(title: string, rawContent: string, parts: any[]) {
     this.log(`Starting Wiki synthesis for "${title}"...`);
 
-    // 1. 生成并存储摘要
     const summaryFileName = `${new Date().toISOString().split('T')[0]}-${title.replace(/[^a-z0-9\u4e00-\u9fa5]/gi, '-')}.md`;
     const summaryPath = path.join(this.baseDir, 'summaries', summaryFileName);
     const summaryContent = `# Summary: ${title}\n\n## Key Takeaways\n\n${parts.map(p => `### ${p.topic}\n${p.summary}`).join('\n\n')}\n\n## References\n- Raw source preserved in knowledge_store index.`;
-    await fs.writeFile(summaryPath, summaryContent);
+    const summarySnapshot = await this.snapshotFile(summaryPath);
 
-    // 2. 识别并提取实体/概念
+    const synthesisInput = parts.map(p => `${p.topic}: ${p.summary}\n${p.content}`).join('\n\n');
     const extractPrompt = `针对以下关于《${title}》的分析内容，请识别并提取其中的核心【实体 (Entities)】和【概念 (Concepts)】。
 实体应包括：具体的模型、公司、产品、工具（如 Claude 3.7, OpenAI, Cursor）。
 概念应包括：技术范式、协议、理论名词（如 MCP, System 2 Reasoning, Vibe Coding）。
@@ -221,7 +238,7 @@ export class SimpleKnowledgeBaseService {
   "concepts": [{ "name": "...", "info": "..." }]
 }
 
-内容：\n${parts.map(p => `${p.topic}: ${p.summary}\n${p.content}`).join('\n\n')}`;
+内容：\n${this.truncateForPrompt(synthesisInput, 60000)}`;
 
     const wikiEntries = await AIHelper.getJsonResponse<{ 
       entities: { name: string, info: string }[], 
@@ -233,28 +250,98 @@ export class SimpleKnowledgeBaseService {
       { entities: [], concepts: [] }
     );
 
-    // 3. 并行更新各页面
-    await Promise.all([
-      ...wikiEntries.entities.map(e => this.synthesizePage('entities', e.name, e.info)),
-      ...wikiEntries.concepts.map(c => this.synthesizePage('concepts', c.name, c.info))
+    const pageUpdates = await Promise.all([
+      ...wikiEntries.entities.map(e => this.synthesizePage('entities', e.name, e.info, false)),
+      ...wikiEntries.concepts.map(c => this.synthesizePage('concepts', c.name, c.info, false))
     ]);
 
-    // 4. 更新日志和索引
-    await this.updateWikiIndex();
-    await this.writeWikiLog(`Ingest | ${title}\n- Generated summary: summaries/${summaryFileName}\n- Updated ${wikiEntries.entities.length} entities and ${wikiEntries.concepts.length} concepts.`);
+    return {
+      summaryPath,
+      summaryFileName,
+      summaryContent,
+      summaryPreviousContent: summarySnapshot.content,
+      summaryExisted: summarySnapshot.existed,
+      pageUpdates,
+      entityCount: wikiEntries.entities.length,
+      conceptCount: wikiEntries.concepts.length,
+      title
+    };
+  }
+
+  private async commitWikiSynthesis(synthesis: {
+    summaryPath: string;
+    summaryFileName: string;
+    summaryContent: string;
+    summaryPreviousContent?: string;
+    summaryExisted: boolean;
+    pageUpdates: { filePath: string; content: string; previousContent?: string; existed: boolean }[];
+    entityCount: number;
+    conceptCount: number;
+    title: string;
+  }) {
+    const writes = [
+      { filePath: synthesis.summaryPath, content: synthesis.summaryContent },
+      ...synthesis.pageUpdates
+    ];
+
+    try {
+      for (const write of writes) {
+        await fs.writeFile(write.filePath, write.content);
+      }
+
+      await this.updateWikiIndex();
+    } catch (err) {
+      await this.rollbackWikiSynthesis(synthesis);
+      throw err;
+    }
+  }
+
+  private async rollbackWikiSynthesis(synthesis: {
+    summaryPath: string;
+    summaryPreviousContent?: string;
+    summaryExisted: boolean;
+    pageUpdates: { filePath: string; previousContent?: string; existed: boolean }[];
+  }) {
+    try {
+      if (synthesis.summaryExisted && synthesis.summaryPreviousContent !== undefined) {
+        await fs.writeFile(synthesis.summaryPath, synthesis.summaryPreviousContent);
+      } else {
+        await fs.rm(synthesis.summaryPath, { force: true });
+      }
+      for (const update of synthesis.pageUpdates) {
+        if (update.existed && update.previousContent !== undefined) {
+          await fs.writeFile(update.filePath, update.previousContent);
+        } else {
+          await fs.rm(update.filePath, { force: true });
+        }
+      }
+      await this.updateWikiIndex();
+    } catch (err: any) {
+      this.log(`Failed to rollback wiki synthesis: ${err.message}`, 'warn');
+    }
+  }
+
+  private async snapshotFile(filePath: string): Promise<{ existed: boolean; content?: string }> {
+    try {
+      return { existed: true, content: await fs.readFile(filePath, 'utf-8') };
+    } catch {
+      return { existed: false };
+    }
   }
 
   /**
    * 合成并更新单个 Wiki 页面
    */
-  private async synthesizePage(type: 'entities' | 'concepts', name: string, newInfo: string) {
+  private async synthesizePage(type: 'entities' | 'concepts', name: string, newInfo: string, write: boolean = true) {
     const safeName = name.replace(/[^a-z0-9\u4e00-\u9fa5]/gi, '-');
     const filePath = path.join(this.baseDir, type, `${safeName}.md`);
     let existingContent = "";
+    let existed = true;
 
     try {
       existingContent = await fs.readFile(filePath, 'utf-8');
     } catch {
+      existed = false;
       existingContent = `# ${name}\n\n## Summary\n\n(Generated from initial source)\n\n## Knowledge Graph\n\n`;
     }
 
@@ -268,7 +355,18 @@ export class SimpleKnowledgeBaseService {
 现有内容：\n${existingContent}\n\n新摄取的信息：\n${newInfo}\n\n请直接返回整合后的全量 Markdown 内容。`;
 
     const mergedContent = await this.aiProvider.generateContent(mergePrompt, [], "资深的 Wiki 管理员。");
-    await fs.writeFile(filePath, mergedContent.content);
+    if (write) {
+      await fs.writeFile(filePath, mergedContent.content);
+    }
+    return { filePath, content: mergedContent.content, previousContent: existed ? existingContent : undefined, existed };
+  }
+
+  private async cleanupDirectory(directoryPath: string) {
+    try {
+      await fs.rm(directoryPath, { recursive: true, force: true });
+    } catch (err: any) {
+      this.log(`Failed to cleanup directory ${directoryPath}: ${err.message}`, 'warn');
+    }
   }
 
   /**
@@ -315,14 +413,59 @@ export class SimpleKnowledgeBaseService {
   }
 
   private async partitionContent(title: string, content: string): Promise<any[]> {
-    this.log('AI Partitioning content into topics...');
+    const chunks = this.chunkText(content);
+    this.log(`AI Partitioning content into topics across ${chunks.length} chunk(s)...`);
+
+    const allParts: any[] = [];
+    for (let i = 0; i < chunks.length; i++) {
+      const chunkParts = await this.partitionChunk(title, chunks[i], i + 1, chunks.length);
+      allParts.push(...chunkParts);
+    }
+
+    if (allParts.length === 0) {
+      throw new Error('AI 语义拆分没有返回任何知识片段');
+    }
+
+    return this.normalizeParts(allParts);
+  }
+
+  private chunkText(text: string, chunkSize: number = 6000, overlap: number = 500): string[] {
+    const cleanText = text.replace(/\n\s*\n/g, '\n\n').trim();
+    if (!cleanText) return [];
+    if (cleanText.length <= chunkSize) return [cleanText];
+
+    const chunks: string[] = [];
+    let start = 0;
+
+    while (start < cleanText.length) {
+      let end = Math.min(start + chunkSize, cleanText.length);
+      if (end < cleanText.length) {
+        const paragraphBreak = cleanText.lastIndexOf('\n', end);
+        if (paragraphBreak > start + chunkSize * 0.7) {
+          end = paragraphBreak;
+        }
+      }
+
+      chunks.push(cleanText.slice(start, end).trim());
+      if (end >= cleanText.length) break;
+      start = Math.max(0, end - overlap);
+    }
+
+    return chunks;
+  }
+
+  private async partitionChunk(title: string, chunk: string, chunkIndex: number, totalChunks: number): Promise<any[]> {
     const partitionPrompt = `你是一位资深的知识管理与文档分析专家。
-任务：对以下输入文档进行深度解析，提取全部核心价值信息，并重组为结构化的知识板块，以便直接存入个人知识库。
+任务：对以下输入文档分块进行深度解析，提取本分块内的全部核心价值信息，并重组为结构化的知识板块，以便直接存入个人知识库。
+
+【文档信息】
+- 文档标题：${title}
+- 当前分块：${chunkIndex}/${totalChunks}
 
 【核心原则】
 1. **信息无损（关键要求）**：提取必须穷尽文档中的核心观点、重要数据、案例和结论。剔除冗余废话，但绝不能遗漏实质性内容。
-2. **MECE拆分（相互独立，完全穷尽）**：按底层逻辑将文档拆分为 3-5 个核心板块。板块之间避免内容交叉，确保整体覆盖全篇。
-3. **高信噪比表达**：在 "content" 中，请使用 Markdown 语法（如多级列表 -、加粗 **）对信息进行层级化排版，切忌输出无重点的长篇大段。
+2. **按内容自然拆分**：根据本分块的信息密度输出 1-5 个知识板块，不要为了凑数量强行合并或拆分。
+3. **保留细节**：在 "content" 中，请使用 Markdown 语法（如多级列表 -、加粗 **）对信息进行层级化排版，保留关键细节、数据、案例、名称、结论和限制条件。
 4. **语言一致性**：请全程使用【${this.language}】进行解析和输出。
 
 【输出格式】
@@ -337,15 +480,49 @@ JSON 对象的结构如下：
   }
 ]
 
-请开始处理以下文档《${title}》：
-${content}`;
+请开始处理以下文档分块：
+${chunk}`;
 
-    return await AIHelper.getJsonResponse<any[]>(
+    const parts = await this.getStrictJsonResponse<any[]>(
       this.aiProvider,
       partitionPrompt,
-      "资深的知识管理与文档分析专家。",
-      [{ topic: "全文内容", summary: "内容拆分失败，返回全文", tags: ["未分类"], content }]
+      "资深的知识管理与文档分析专家。"
     );
+
+    if (!Array.isArray(parts)) {
+      throw new Error(`AI 语义拆分失败：第 ${chunkIndex}/${totalChunks} 个分块没有返回 JSON 数组`);
+    }
+
+    return parts;
+  }
+
+  private normalizeParts(parts: any[]) {
+    return parts.map((part, index) => ({
+      topic: String(part?.topic || `知识片段 ${index + 1}`).trim(),
+      summary: String(part?.summary || '').trim(),
+      tags: Array.isArray(part?.tags) ? part.tags.map((tag: any) => String(tag).trim()).filter(Boolean) : [],
+      content: String(part?.content || '').trim()
+    })).filter(part => part.content || part.summary);
+  }
+
+  private async getStrictJsonResponse<T>(aiProvider: AIProvider, prompt: string, systemInstruction?: string): Promise<T> {
+    const response = await aiProvider.generateContent(prompt, [], systemInstruction);
+    const content = response.content.trim();
+    const matches = content.match(/\[[\s\S]*\]|\{[\s\S]*\}/g);
+    const candidates = matches && matches.length > 0 ? matches.reverse() : [content];
+
+    for (const candidate of candidates) {
+      try {
+        return JSON.parse(candidate) as T;
+      } catch {}
+    }
+
+    throw new Error(`AI 返回了无法解析的 JSON：${content.slice(0, 300)}`);
+  }
+
+  private truncateForPrompt(text: string, maxLength: number): string {
+    if (text.length <= maxLength) return text;
+    return `${text.slice(0, maxLength)}\n\n...（内容过长，已截断用于本轮 Wiki 合成；完整原文已保存在 raw.md）`;
   }
 
   private async savePartsAndGetIndex(docId: string, parts: any[]) {
@@ -395,9 +572,19 @@ ${content}`;
     await fs.mkdir(newDocDir, { recursive: true });
 
     const allNewParts: any[] = [];
+    const mergedRawContents: string[] = [];
     let partCounter = 0;
 
     for (const doc of docsToMerge) {
+      if (doc.rawFilePath) {
+        try {
+          const rawContent = await fs.readFile(path.join(this.baseDir, doc.rawFilePath), 'utf-8');
+          mergedRawContents.push(`# ${doc.title}\n\n${rawContent}`);
+        } catch (err: any) {
+          this.log(`Failed to read raw content for ${doc.id} during merge: ${err.message}`, 'warn');
+        }
+      }
+
       for (const part of doc.parts) {
         const oldPath = path.join(this.baseDir, part.filePath);
         const newFileName = `part_${partCounter}.md`;
@@ -419,10 +606,16 @@ ${content}`;
       }
     }
 
+    const rawFilePath = path.join(newDocId, 'raw.md');
+    if (mergedRawContents.length > 0) {
+      await fs.writeFile(path.join(this.baseDir, rawFilePath), mergedRawContents.join('\n\n---\n\n'));
+    }
+
     const newEntry: KnowledgeIndexEntry = {
       id: newDocId,
       title: newTitle,
       date: new Date().toISOString(),
+      rawFilePath: mergedRawContents.length > 0 ? rawFilePath : undefined,
       parts: allNewParts
     };
     

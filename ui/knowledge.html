@@ -115,6 +115,7 @@
                         sessionStorage.setItem('kb_token', token);
                         setIsLoggedIn(true);
                         fetchItems(token);
+                        fetchWikiStructure(token);
                     } else { alert(data.error || '密码错误'); }
                 } catch (e) { alert('登录失败'); }
             };
@@ -151,6 +152,7 @@
                     });
                     if (res.ok) {
                         fetchItems();
+                        fetchWikiStructure();
                         setFileSkipAI(false);
                         setIsAddModalOpen(false);
                     } else { const err = await res.json(); alert(`上传失败: ${err.error}`); }
@@ -162,6 +164,7 @@
                 if (!confirm('确定删除吗？')) return;
                 await fetch(`/api/knowledge/${id}`, { method: 'DELETE', headers: { 'Authorization': sessionStorage.getItem('kb_token') } });
                 fetchItems();
+                fetchWikiStructure();
             };
 
             const handlePreview = async (docId, partId) => {
@@ -273,6 +276,7 @@
                     if (res.ok) {
                         setNewItem({ title: '', content: '', skipAI: false });
                         fetchItems();
+                        fetchWikiStructure();
                         setIsAddModalOpen(false);
                     } else {
                         const err = await res.json();
